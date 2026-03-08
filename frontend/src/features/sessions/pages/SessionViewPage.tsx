@@ -65,7 +65,12 @@ export default function SessionViewPage() {
   return (
     <Layout>
       <SessionHeader sessionName={session.name} sessionState={session.state} role={role} />
-      <DashboardLayout role={role} widgets={role === 'gm' ? gmWidgets : playerWidgets} />
+      <DashboardLayout
+        role={role}
+        widgets={role === 'gm' ? gmWidgets : playerWidgets}
+        currentUser={currentUser}
+        currentSession={session}
+      />
     </Layout>
   );
 }
