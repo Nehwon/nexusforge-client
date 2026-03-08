@@ -65,6 +65,24 @@
       "additionalProperties": true
     },
 
+    "dashboardLayout": {
+      "type": "object",
+      "description": "Configurations de layout de dashboard par rôle.",
+      "properties": {
+        "mj": {
+          "type": "object",
+          "description": "Layout du dashboard en tant que MJ.",
+          "additionalProperties": true
+        },
+        "player": {
+          "type": "object",
+          "description": "Layout du dashboard en tant que joueur.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+
     "security": {
       "type": "object",
       "description": "Paramètres de sécurité et 2FA.",
