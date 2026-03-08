@@ -1,1 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexusforge.app/schemas/message.schema.json",
+  "title": "Message",
+  "type": "object",
+  "required": ["id", "sessionId", "channelType", "fromUserId", "createdAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Identifiant unique du message (UUID)."
+    },
 
+    "sessionId": {
+      "type": "string",
+      "description": "Identifiant de la session à laquelle ce message appartient."
+    },
+
+    "channelId": {
+      "type": ["string", "null"],
+      "description": "Référence optionnelle à un canal logique (global, groupe, direct)."
+    },
+
+    "channelType": {
+      "type": "string",
+      "enum": ["global", "group", "direct", "system"],
+      "description": "Type de canal : global, groupe, direct (MP), ou message système."
+    },
+
+    "fromUserId": {
+      "type": "string",
+      "description": "Identifiant de l'utilisateur émetteur."
+    },
+
+    "toUserIds": {
+      "type": "array",
+      "description": "Liste des destinataires directs (pour direct ou groupe). Peut être vide pour global.",
+      "items": { "type": "string" }
+    },
+
+    "groupId": {
+      "type": ["string", "null"],
+      "description": "Identifiant du groupe si channelType = 'group'."
+    },
+
+    "isPrivateToGM": {
+      "type": "boolean",
+      "default": false,
+      "description": "Indique un message privé au MJ (whisper MJ)."
+    },
+
+    "isSystemGenerated": {
+      "type": "boolean",
+      "default": false,
+      "description": "Message généré automatiquement par le système (jet, notification...)."
+    },
+
+    "kind": {
+      "type": "string",
+      "enum": ["text", "roll", "document", "mixed"],
+      "default": "text",
+      "description": "Type de message (simple texte, résultat de jet, doc partagé, ou mixte)."
+    },
+
+    "content": {
+      "type": "string",
+      "description": "Contenu texte du message (markdown ou plaintext)."
+    },
+
+    "attachments": {
+      "type": "array",
+      "description": "Pièces jointes (documents, fiches, objets...).",
+      "items": {
+        "type": "object",
+        "required": ["id", "type"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Identifiant de la ressource attachée."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["document", "character", "item", "image", "other"],
+            "description": "Type de ressource attachée."
+          },
+          "title": {
+            "type": "string",
+            "description": "Titre ou nom de la pièce jointe."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "rollResult": {
+      "type": ["object", "null"],
+      "description": "Résultat de jet si kind = 'roll'.",
+      "properties": {
+        "rollDefinitionId": {
+          "type": ["string", "null"],
+          "description": "Référence à une définition de jet du système."
+        },
+        "expression": {
+          "type": "string",
+          "description": "Expression de dés complète (ex: '1d20+3')."
+        },
+        "total": {
+          "type": "number",
+          "description": "Résultat total du jet."
+        },
+        "details": {
+          "type": "object",
+          "description": "Détails (dés individuels, bonus, malus...).",
+          "additionalProperties": true
+        },
+        "targetValue": {
+          "type": ["number", "null"],
+          "description": "Valeur cible si applicable."
+        },
+        "success": {
+          "type": ["boolean", "null"],
+          "description": "Indique si le jet est un succès (si la logique le permet)."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "ui": {
+      "type": "object",
+      "description": "Métadonnées pour l'affichage (bandeau, importance, etc.).",
+      "properties": {
+        "importance": {
+          "type": "string",
+          "enum": ["normal", "high", "critical"],
+          "default": "normal",
+          "description": "Importance visuelle (bandeau central pour 'high' ou 'critical')."
+        },
+        "shouldShowBanner": {
+          "type": "boolean",
+          "default": false,
+          "description": "Afficher un bandeau central à l'arrivée du message."
+        },
+        "autoPinOnGM": {
+          "type": "boolean",
+          "default": false,
+          "description": "Épingler ce message sur l'écran MJ (ex : whisper important)."
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Horodatage de création du message."
+    },
+
+    "readByUserIds": {
+      "type": "array",
+      "description": "Liste des utilisateurs qui ont marqué ce message comme lu.",
+      "items": { "type": "string" }
+    },
+
+    "deletedForUserIds": {
+      "type": "array",
+      "description": "Liste des utilisateurs pour qui ce message est masqué/supprimé côté client.",
+      "items": { "type": "string" }
+    },
+
+    "sync": {
+      "type": "object",
+      "description": "Infos de synchronisation pour offline-first.",
+      "properties": {
+        "originDeviceId": {
+          "type": ["string", "null"],
+          "description": "Device d'origine (pour debugging offline)."
+        },
+        "isPending": {
+          "type": "boolean",
+          "default": false,
+          "description": "Message en attente d'envoi au serveur."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

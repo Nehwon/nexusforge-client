@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexusforge.app/schemas/userDevice.schema.json",
+  "title": "UserDevice",
+  "type": "object",
+  "required": ["id", "userId", "deviceType", "createdAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Identifiant unique du device (UUID)."
+    },
+
+    "userId": {
+      "type": "string",
+      "description": "Utilisateur propriétaire du device."
+    },
+
+    "deviceType": {
+      "type": "string",
+      "enum": ["desktop", "laptop", "tablet", "phone", "other"],
+      "description": "Type d'appareil."
+    },
+
+    "name": {
+      "type": "string",
+      "description": "Nom du device (ex: 'PC MJ salon')."
+    },
+
+    "lastSeenAt": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Dernière date de connexion."
+    },
+
+    "lastIp": {
+      "type": ["string", "null"],
+      "description": "Dernière IP (optionnel, pour debug)."
+    },
+
+    "capabilities": {
+      "type": "object",
+      "description": "Capacités détectées (multi-écrans, PWA installée, etc.).",
+      "properties": {
+        "supportsMultipleScreens": {
+          "type": "boolean",
+          "default": false
+        },
+        "isPwaInstalled": {
+          "type": "boolean",
+          "default": false
+        },
+        "supportsNotifications": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "sync": {
+      "type": "object",
+      "description": "Infos de sync pour ce device.",
+      "properties": {
+        "lastFullSyncAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "lastPartialSyncAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+
+    "updatedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

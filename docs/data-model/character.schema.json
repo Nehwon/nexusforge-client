@@ -1,1 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexusforge.app/schemas/character.schema.json",
+  "title": "Character",
+  "type": "object",
+  "required": ["id", "systemId", "templateId", "name", "createdAt", "updatedAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Identifiant unique du personnage (UUID)."
+    },
+    "systemId": {
+      "type": "string",
+      "description": "Référence au système de jeu utilisé."
+    },
+    "templateId": {
+      "type": "string",
+      "description": "Référence au characterTemplate du système (PC, NPC, etc.)."
+    },
 
+    "ownerUserId": {
+      "type": ["string", "null"],
+      "description": "ID du joueur propriétaire (null pour PNJ purement MJ)."
+    },
+    "createdByUserId": {
+      "type": ["string", "null"],
+      "description": "ID de l'utilisateur qui a créé la fiche."
+    },
+
+    "name": {
+      "type": "string",
+      "description": "Nom du personnage."
+    },
+    "alias": {
+      "type": "string",
+      "description": "Surnom ou nom d'affichage alternatif."
+    },
+    "portraitUrl": {
+      "type": ["string", "null"],
+      "description": "URL d'un portrait / image."
+    },
+
+    "type": {
+      "type": "string",
+      "enum": ["pc", "npc", "monster", "other"],
+      "description": "Type de personnage (doit être cohérent avec le template)."
+    },
+
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tags libres (faction, rôle, etc.)."
+    },
+
+    "level": {
+      "type": ["number", "null"],
+      "description": "Niveau du personnage si le système en utilise."
+    },
+
+    "attributes": {
+      "type": "object",
+      "description": "Valeurs des caractéristiques définies dans System.attributes.",
+      "additionalProperties": {
+        "type": ["number", "string", "boolean", "null"]
+      }
+    },
+
+    "resources": {
+      "type": "object",
+      "description": "Ressources (PV, mana, stress, etc.) liées à System.resources.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["current"],
+        "properties": {
+          "current": { "type": "number" },
+          "max": { "type": ["number", "null"] }
+        }
+      }
+    },
+
+    "skills": {
+      "type": "object",
+      "description": "Compétences/dons liés à System.skills.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "rank": { "type": ["number", "null"] },
+          "customValue": {
+            "type": ["number", "string", "null"],
+            "description": "Valeur spéciale si besoin."
+          }
+        }
+      }
+    },
+
+    "inventory": {
+      "type": "array",
+      "description": "Inventaire générique (objets, équipements, etc.).",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "quantity": {
+            "type": "number",
+            "default": 1
+          },
+          "description": { "type": "string" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "isEquipped": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+
+    "customFields": {
+      "type": "object",
+      "description": "Champs additionnels propres à ce personnage (au-delà du template).",
+      "additionalProperties": {
+        "type": ["number", "string", "boolean", "null", "object", "array"]
+      }
+    },
+
+    "playerPrivateNotes": {
+      "type": "string",
+      "description": "Notes privées visibles uniquement par le joueur propriétaire de la fiche."
+    },
+
+    "gmPrivateNotes": {
+      "type": "string",
+      "description": "Notes privées visibles uniquement par le MJ."
+    },
+
+    "visibility": {
+      "type": "object",
+      "description": "Contrôles de visibilité de certaines parties de la fiche.",
+      "properties": {
+        "hideAttributesFromPlayers": {
+          "type": "array",
+          "description": "Liste d'IDs d'attributs cachés aux joueurs (vus seulement par le MJ).",
+          "items": { "type": "string" }
+        },
+        "hideResourcesFromPlayers": {
+          "type": "array",
+          "description": "Liste d'IDs de ressources cachées aux joueurs.",
+          "items": { "type": "string" }
+        },
+        "hideInventoryFromPlayers": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "flags": {
+      "type": "object",
+      "description": "Drapeaux techniques (statuts, options).",
+      "properties": {
+        "isDead": { "type": "boolean", "default": false },
+        "isHidden": {
+          "type": "boolean",
+          "default": false,
+          "description": "Caché aux joueurs par défaut."
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "sessionState": {
+      "type": "object",
+      "description": "État spécifique à la session courante (conditions, initiative, etc.).",
+      "properties": {
+        "initiative": { "type": ["number", "null"] },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "source": { "type": "string" },
+              "expiresAtRound": {
+                "type": ["number", "null"],
+                "description": "Round de fin si applicable."
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+
+    "sync": {
+      "type": "object",
+      "description": "Infos de synchronisation pour offline-first.",
+      "properties": {
+        "lastSyncedAt": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "lastModifiedBy": {
+          "type": ["string", "null"],
+          "description": "Dernier user à avoir modifié la fiche (MJ ou joueur)."
+        },
+        "conflictStatus": {
+          "type": "string",
+          "enum": ["none", "pending_review", "resolved"],
+          "default": "none"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
