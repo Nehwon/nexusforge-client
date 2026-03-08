@@ -19,19 +19,18 @@ Ce dossier contient le code du frontend de Nexus Forge, implémenté comme une P
 
 ---
 
-## 2. Stack envisagée
-
-*(indicatif, à ajuster selon tes choix techniques)*
+## 2. Stack utilisée (état actuel)
 
 - Bundler : Vite
-- Framework UI : React (ou équivalent)
+- Framework UI : React
 - Langage : TypeScript
-- State management : Zustand / Redux / autre
-- PWA : Service Worker, Workbox (ou équivalent) pour cache + sync
+- Routing : React Router
+- State management : React Context (auth mock)
+- PWA : manifest + service worker placeholder
 
 ---
 
-## 3. Structure proposée de `src/`
+## 3. Structure de `src/` (mise en place)
 
 ```text
 src/
@@ -50,7 +49,7 @@ src/
 │  ├─ chat/              # Chat & messages
 │  ├─ documents/         # Documents & handouts
 │  ├─ notes/             # Notes et journal
-│  └─ systems/           # Éditeur de systèmes de jeu
+│  └─ ...                # Extensions futures
 ├─ store/                # State global (auth, session, dashboard, etc.)
 ├─ services/             # API, sync offline, PWA, WebSocket…
 ├─ hooks/                # Hooks réutilisables
@@ -60,12 +59,11 @@ src/
 
 ---
 
-## 4. Pages principales prévues
+## 4. Pages principales (V1 actuelle)
 
 - Auth
 
 	- /login : écran de connexion
-	- /register : création de compte
 	- /account/security : sécurité du compte (2FA, WebAuthn, Discord)
 
 - Sessions
@@ -90,15 +88,12 @@ src/
 
 ## 6. Prochaines étapes
 
--	Initialiser le projet (ex : npm create vite@latest frontend).
-- Mettre en place :
-	- routing de base (/login, /sessions, /sessions/:id),
-	- gestion d’auth minimal (mock),
-	- squelette du dashboard (containers de widgets).
-
 - Connecter progressivement les features :
 	- Auth réelle,
 	- Session live,
 	- Fiches personnages,
 	- Chat & documents,
 	- Offline + sync.
+
+Suivi opérationnel du travail fait/à faire:
+- [`docs/suivi-travail.md`](../docs/suivi-travail.md)

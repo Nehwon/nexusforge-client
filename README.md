@@ -78,8 +78,10 @@ Elle permet de créer des systèmes de jeu génériques, gérer fiches de person
 
 ## État du projet
 
-> ⚠️ Projet en phase de **conception**.  
-> La structure des schémas JSON (systèmes, fiches, sessions, etc.) et l’architecture globale sont en cours de définition.
+> Projet en phase de **prototype initial**.  
+> La documentation de conception est en place et le frontend V1 est bootstrapé (routing, auth mock, dashboard stub).
+
+Suivi détaillé de l'avancement: [`docs/suivi-travail.md`](docs/suivi-travail.md).
 
 ---
 
