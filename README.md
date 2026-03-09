@@ -130,3 +130,28 @@ Les pistes de contribution incluent :
 
 Nexus Forge est distribué sous licence **Apache License 2.0**.  
 Voir le fichier [`LICENSE`](LICENSE) pour plus de détails.
+
+---
+
+## Déploiement frontend connecté backend
+
+Le frontend peut fonctionner:
+
+- en mode local/mock (sans backend),
+- ou connecté à un backend réel.
+
+Variables Vite (voir `frontend/.env.example`):
+
+- `VITE_BACKEND_ENABLED=true`
+- `VITE_API_BASE_URL=https://api.votre-domaine.tld`
+- `VITE_SYNC_TRANSPORT=http`
+
+Build:
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+Puis déployer le contenu de `frontend/dist` sur l'hébergement web (ex: o2switch).

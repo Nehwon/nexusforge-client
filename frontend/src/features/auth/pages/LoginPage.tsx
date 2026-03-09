@@ -20,7 +20,7 @@ export default function LoginPage() {
     <Layout>
       <section className="card">
         <h1>Connexion Nexus Forge</h1>
-        <p>Connexion mock: utilisez un email contenant "gm" pour simuler un MJ.</p>
+        <p>Connectez-vous avec votre compte. Le mode mock reste disponible si backend non configuré.</p>
         <LoginForm onSubmit={handleLogin} />
       </section>
     </Layout>

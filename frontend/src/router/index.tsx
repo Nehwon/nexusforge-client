@@ -6,12 +6,18 @@ import SessionViewPage from '../features/sessions/pages/SessionViewPage';
 import { useAuth } from '../hooks/useAuth';
 
 function RootRedirect() {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading } = useAuth();
+  if (isLoading) {
+    return <div style={{ padding: '1rem' }}>Chargement...</div>;
+  }
   return <Navigate to={currentUser ? '/sessions' : '/login'} replace />;
 }
 
 function RequireAuth({ children }: { children: JSX.Element }) {
-  const { currentUser } = useAuth();
+  const { currentUser, isLoading } = useAuth();
+  if (isLoading) {
+    return <div style={{ padding: '1rem' }}>Chargement...</div>;
+  }
   if (!currentUser) {
     return <Navigate to="/login" replace />;
   }

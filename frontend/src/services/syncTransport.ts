@@ -1,4 +1,4 @@
-import { apiClient } from './apiClient';
+import { apiClient, requestJson } from './apiClient';
 import { LocalAction } from '../types/localAction';
 import { SyncActionResult } from '../types/sync';
 
@@ -42,30 +42,22 @@ export async function pushActionToServer(action: LocalAction): Promise<SyncActio
     return { status: 'accepted' };
   }
 
-  const response = await fetch('/api/sync/actions', {
+  const payload = await requestJson<Partial<SyncActionResult> | void>({
+    path: '/api/sync/actions',
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
+    withAuth: true,
+    body: {
       id: action.id,
       entityType: action.entityType,
       entityId: action.entityId,
       actionType: action.actionType,
       payload: action.payload,
       createdAt: action.createdAt
-    })
+    }
   });
-
-  if (!response.ok) {
-    throw new Error(`Sync HTTP error: ${response.status}`);
-  }
-
-  if (response.status === 204) {
+  if (!payload) {
     return { status: 'accepted' };
   }
-
-  const payload = (await response.json()) as Partial<SyncActionResult>;
   if (payload.status === 'accepted' || payload.status === 'conflict' || payload.status === 'rejected') {
     return {
       status: payload.status,

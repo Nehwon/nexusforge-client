@@ -2,6 +2,7 @@ import { db, ensureDatabaseIsInitialized } from '../db';
 import { Character } from '../../types/character';
 import { CharacterSheetView } from '../../types/characterSheet';
 import { localActionRepository } from './localActionRepository';
+import { isBackendEnabled, requestJson } from '../../services/apiClient';
 
 export const characterRepository = {
   async listForSession(params: { sessionId: string; role: 'gm' | 'player'; currentUserId: string }): Promise<Character[]> {
@@ -30,6 +31,26 @@ export const characterRepository = {
     name?: string;
   }): Promise<Character> {
     await ensureDatabaseIsInitialized();
+
+    if (isBackendEnabled()) {
+      try {
+        const payload = await requestJson<{ character: Character }>({
+          path: `/api/sessions/${params.sessionId}/characters/from-template`,
+          method: 'POST',
+          withAuth: true,
+          body: {
+            systemId: params.systemId,
+            templateId: params.templateId,
+            name: params.name ?? params.template.name,
+            ownerUserId: params.ownerUserId ?? null
+          }
+        });
+        await db.characters.put(payload.character);
+        return payload.character;
+      } catch {
+        // fallback local creation
+      }
+    }
 
     const characterId = `character-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const characterName = params.name?.trim() || params.template.name || 'Nouveau personnage';

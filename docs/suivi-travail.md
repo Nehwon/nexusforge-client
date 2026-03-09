@@ -270,6 +270,26 @@ Dernière mise à jour: 2026-03-09
   - génération automatique d'une fiche de référence par Horreur connue (Cercles I à V),
   - préremplissage cercle, dé associé, type parasite, actions de jet.
 
+### Connexion frontend vers backend (Sprint 3 - extension)
+
+- Couche API commune ajoutée (`apiClient`):
+  - `VITE_API_BASE_URL`
+  - `VITE_BACKEND_ENABLED`
+  - gestion tokens (`access` / `refresh`) en localStorage
+  - helper `requestJson` avec header Bearer.
+- Auth branchée backend:
+  - `POST /api/auth/login`
+  - `GET /api/auth/me`
+  - refresh automatique via `POST /api/auth/refresh`
+  - logout via `POST /api/auth/logout`
+  - fallback mock conservé si backend non activé.
+- Repositories branchés backend avec fallback local:
+  - sessions (`GET /api/sessions`, `GET /api/sessions/{id}`, `PATCH /api/sessions/{id}`)
+  - systèmes (`GET /api/systems`, `GET /api/systems/{id}`, `POST`, `PATCH`, `duplicate`)
+  - création fiche depuis template (`POST /api/sessions/{sessionId}/characters/from-template`)
+- Sync HTTP auth:
+  - `POST /api/sync/actions` via `requestJson` authentifié.
+
 ---
 
 ## En cours
