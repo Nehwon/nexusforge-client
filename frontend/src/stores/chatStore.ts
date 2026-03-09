@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { messageRepository } from '../data/repositories';
 import { ChatChannel } from '../types/chat';
 import { Message, MessageImportance, SystemMessageType } from '../types/message';
 
@@ -59,15 +60,12 @@ function subscribe(listener: () => void) {
   };
 }
 
-function buildMockSessionState(sessionId: string, gmUserId: string): SessionChatState {
+function buildInitialSessionState(sessionId: string, gmUserId: string): SessionChatState {
   const playerOneId = 'user-player-1';
   const playerTwoId = 'user-player-2';
   const allMembers = [gmUserId, playerOneId, playerTwoId];
 
   const globalChannelId = `${sessionId}-channel-global`;
-  const gmPlayerOneDirectChannelId = `${sessionId}-channel-direct-gm-player-1`;
-  const playerDirectChannelId = `${sessionId}-channel-direct-player-1-player-2`;
-  const groupAChannelId = `${sessionId}-channel-group-a`;
 
   return {
     channels: [
@@ -79,84 +77,30 @@ function buildMockSessionState(sessionId: string, gmUserId: string): SessionChat
         memberUserIds: allMembers
       },
       {
-        id: gmPlayerOneDirectChannelId,
+        id: `${sessionId}-channel-direct-gm-player-1`,
         kind: 'direct',
         title: 'MP - MJ / Joueur 1',
         sessionId,
         memberUserIds: [gmUserId, playerOneId]
       },
       {
-        id: playerDirectChannelId,
+        id: `${sessionId}-channel-direct-player-1-player-2`,
         kind: 'direct',
         title: 'MP - Joueur 1 / Joueur 2',
         sessionId,
         memberUserIds: [playerOneId, playerTwoId]
       },
       {
-        id: groupAChannelId,
+        id: `${sessionId}-channel-group-a`,
         kind: 'group',
         title: 'Groupe A',
         sessionId,
         memberUserIds: [gmUserId, playerOneId]
       }
     ],
-    messages: [
-      {
-        id: `${sessionId}-message-1`,
-        sessionId,
-        channelId: globalChannelId,
-        channelType: 'global',
-        fromUserId: gmUserId,
-        content: 'Bienvenue a la table, debut de session dans 5 minutes.',
-        createdAt: '2026-03-08T18:55:00.000Z'
-      },
-      {
-        id: `${sessionId}-message-2`,
-        sessionId,
-        channelId: globalChannelId,
-        channelType: 'global',
-        fromUserId: playerOneId,
-        content: 'Pret, j ai ma fiche et mes des.',
-        createdAt: '2026-03-08T18:56:00.000Z'
-      },
-      {
-        id: `${sessionId}-message-3`,
-        sessionId,
-        channelId: groupAChannelId,
-        channelType: 'group',
-        fromUserId: gmUserId,
-        groupId: groupAChannelId,
-        content: 'Groupe A, vous commencez au marche noir.',
-        createdAt: '2026-03-08T18:57:00.000Z'
-      },
-      {
-        id: `${sessionId}-message-4`,
-        sessionId,
-        channelId: playerDirectChannelId,
-        channelType: 'direct',
-        fromUserId: playerTwoId,
-        toUserIds: [playerOneId],
-        content: 'On couvre la sortie nord ?',
-        createdAt: '2026-03-08T18:58:00.000Z'
-      },
-      {
-        id: `${sessionId}-message-5`,
-        sessionId,
-        channelId: gmPlayerOneDirectChannelId,
-        channelType: 'direct',
-        fromUserId: playerOneId,
-        toUserIds: [gmUserId],
-        content: 'Whisper MJ: je veux fouiller la salle discretement.',
-        createdAt: '2026-03-08T18:59:00.000Z',
-        isPrivateToGM: true,
-        ui: {
-          shouldShowBanner: true,
-          importance: 'high'
-        }
-      }
-    ],
+    messages: [],
     selectedChannelId: globalChannelId,
-    currentWhisperBannerMessageId: `${sessionId}-message-5`,
+    currentWhisperBannerMessageId: null,
     userDisplayNames: {
       [gmUserId]: 'MJ Mock',
       [playerOneId]: 'Joueur Mock',
@@ -175,17 +119,28 @@ function getSessionState(sessionId: string, gmUserId: string): SessionChatState 
     return existing;
   }
 
-  const state = buildMockSessionState(sessionId, gmUserId);
+  const state = buildInitialSessionState(sessionId, gmUserId);
   sessionStates.set(sessionId, state);
   return state;
+}
+
+async function hydrateSessionMessages(sessionId: string, gmUserId: string): Promise<void> {
+  const state = getSessionState(sessionId, gmUserId);
+  const persistedMessages = await messageRepository.listForSession(sessionId);
+  state.messages = persistedMessages;
+
+  const latestIncomingWhisper = [...persistedMessages]
+    .reverse()
+    .find((message) => message.isPrivateToGM && message.fromUserId !== gmUserId && message.ui?.shouldShowBanner);
+
+  state.currentWhisperBannerMessageId = latestIncomingWhisper?.id ?? null;
+  notifyListeners();
 }
 
 export function sendSystemMessage(params: { sessionId: string; content: string; systemType: SystemMessageType }): void {
   const fallbackGmUserId = 'user-gm-1';
   const state = getSessionState(params.sessionId, sessionStates.get(params.sessionId)?.gmUserId ?? fallbackGmUserId);
-  const globalChannel = state.channels.find(
-    (channel) => channel.kind === 'global' && channel.sessionId === params.sessionId
-  );
+  const globalChannel = state.channels.find((channel) => channel.kind === 'global' && channel.sessionId === params.sessionId);
 
   if (!globalChannel) {
     return;
@@ -213,8 +168,11 @@ export function sendSystemMessage(params: { sessionId: string; content: string; 
     }
   };
 
-  state.messages.push(systemMessage);
-  notifyListeners();
+  void (async () => {
+    await messageRepository.create(systemMessage);
+    state.messages = [...state.messages, systemMessage];
+    notifyListeners();
+  })();
 }
 
 export function useChatStore({
@@ -228,6 +186,10 @@ export function useChatStore({
   useEffect(() => subscribe(() => forceRender((value) => value + 1)), []);
 
   const sessionState = useMemo(() => getSessionState(sessionId, gmUserId), [sessionId, gmUserId]);
+
+  useEffect(() => {
+    void hydrateSessionMessages(sessionId, gmUserId);
+  }, [gmUserId, sessionId]);
 
   const selectChannel = useCallback(
     (channelId: string) => {
@@ -292,13 +254,16 @@ export function useChatStore({
         };
       }
 
-      sessionState.messages.push(message);
+      void (async () => {
+        await messageRepository.create(message);
+        sessionState.messages = [...sessionState.messages, message];
 
-      if (currentUserRole === 'gm' && isIncomingGmWhisper && message.ui?.shouldShowBanner) {
-        sessionState.currentWhisperBannerMessageId = message.id;
-      }
+        if (currentUserRole === 'gm' && isIncomingGmWhisper && message.ui?.shouldShowBanner) {
+          sessionState.currentWhisperBannerMessageId = message.id;
+        }
 
-      notifyListeners();
+        notifyListeners();
+      })();
     },
     [currentUserRole, gmUserId, sessionId, sessionState]
   );
@@ -339,8 +304,7 @@ export function useChatStore({
     channels: sessionState.channels,
     messages: sessionState.messages,
     selectedChannelId: sessionState.selectedChannelId,
-    currentWhisperBannerMessageId:
-      currentUserRole === 'gm' ? sessionState.currentWhisperBannerMessageId : null,
+    currentWhisperBannerMessageId: currentUserRole === 'gm' ? sessionState.currentWhisperBannerMessageId : null,
     userDisplayNames: {
       ...sessionState.userDisplayNames,
       [currentUserId]: sessionState.userDisplayNames[currentUserId] ?? 'Vous'

@@ -1,5 +1,5 @@
 export type ChannelType = 'global' | 'group' | 'direct' | 'system';
-export type SystemMessageType = 'turn' | 'round' | 'combat_start' | 'combat_end';
+export type SystemMessageType = 'turn' | 'round' | 'combat_start' | 'combat_end' | 'roll';
 
 export type MessageImportance = 'low' | 'normal' | 'high' | 'critical';
 

@@ -82,6 +82,7 @@ Elle permet de créer des systèmes de jeu génériques, gérer fiches de person
 > La documentation de conception est en place et le frontend V1 est bootstrapé (routing, auth mock, dashboard stub).
 
 Suivi détaillé de l'avancement: [`docs/suivi-travail.md`](docs/suivi-travail.md).
+Contrats API (en cours): [`docs/api/index.md`](docs/api/index.md).
 
 ---
 

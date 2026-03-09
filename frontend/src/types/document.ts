@@ -5,6 +5,10 @@ export interface Document {
   type: DocumentType;
   title: string;
   ownerUserId: string;
+  sessionId?: string | null;
+  sharedWithUserIds?: string[];
+  isPublic?: boolean;
+  readByUserIds?: string[];
   createdAt: string;
   description?: string;
   fileUrl?: string | null;

@@ -1,30 +1,12 @@
+import { useEffect, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import Layout from '../../../components/Layout';
 import { useAuth } from '../../../hooks/useAuth';
 import { Session } from '../../../types/session';
 import SessionHeader from '../components/SessionHeader';
+import SyncConflictsPanel from '../components/SyncConflictsPanel';
 import DashboardLayout, { WidgetConfig } from '../../dashboard/components/DashboardLayout';
-
-const mockSessions: Record<string, Session> = {
-  'session-1': {
-    id: 'session-1',
-    systemId: 'sys-dnd5e-like',
-    name: 'La Tour Oubliée',
-    gmUserId: 'user-gm-1',
-    state: 'running',
-    createdAt: '2026-03-01T10:00:00.000Z',
-    updatedAt: '2026-03-07T18:00:00.000Z'
-  },
-  'session-2': {
-    id: 'session-2',
-    systemId: 'sys-cyberpunk-like',
-    name: 'Neon Ashes',
-    gmUserId: 'user-gm-2',
-    state: 'planned',
-    createdAt: '2026-03-03T20:00:00.000Z',
-    updatedAt: '2026-03-06T12:30:00.000Z'
-  }
-};
+import { sessionRepository } from '../../../data/repositories';
 
 const gmWidgets: WidgetConfig[] = [
   { id: 'initiative', type: 'initiative', title: 'Initiative & Combat' },
@@ -44,20 +26,62 @@ const playerWidgets: WidgetConfig[] = [
 export default function SessionViewPage() {
   const { sessionId = '' } = useParams();
   const { currentUser } = useAuth();
+  const [session, setSession] = useState<Session | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSession() {
+      try {
+        const localSession = await sessionRepository.getById(sessionId);
+        if (isMounted) {
+          setSession(localSession);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger la session.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [sessionId]);
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <section className="card">Chargement de la session...</section>
+      </Layout>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <Layout>
+        <section className="card" style={{ color: '#b42318' }}>
+          {errorMessage}
+        </section>
+      </Layout>
+    );
+  }
+
+  if (!session) {
+    return <Navigate to="/sessions" replace />;
+  }
 
   if (!currentUser) {
     return <Navigate to="/login" replace />;
   }
-
-  const session = mockSessions[sessionId] ?? {
-    id: sessionId,
-    systemId: 'sys-generic',
-    name: `Session ${sessionId}`,
-    gmUserId: 'user-gm-1',
-    state: 'running' as const,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
 
   const role: 'gm' | 'player' =
     currentUser.id === session.gmUserId || currentUser.email.includes('gm') ? 'gm' : 'player';
@@ -65,6 +89,7 @@ export default function SessionViewPage() {
   return (
     <Layout>
       <SessionHeader sessionName={session.name} sessionState={session.state} role={role} />
+      <SyncConflictsPanel />
       <DashboardLayout
         role={role}
         widgets={role === 'gm' ? gmWidgets : playerWidgets}

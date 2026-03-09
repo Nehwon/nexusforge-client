@@ -90,6 +90,8 @@ Chaque entité existe en deux versions :
 
 ## 5. Sync offline‑first et résolution de conflits
 
+Contrat API de sync (statuts `accepted/conflict/rejected`): [`docs/api/sync-actions.md`](./api/sync-actions.md)
+
 ### 5.1. Journal d’actions
 
 Au lieu de ne stocker que des “snapshots”, le frontend enregistre des **actions** :

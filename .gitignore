@@ -1,1 +1,33 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Backups
 *.bak
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Node / frontend artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+*.tsbuildinfo
+frontend/*.tsbuildinfo
+
+# Misc
+.tmp/
+tmp/

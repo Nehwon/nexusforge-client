@@ -1,113 +1,26 @@
-import { CharacterSheetView, SheetAction, SheetField, SheetGroup } from '../../../types/characterSheet';
-
-type SteamDie = {
-  label: string;
-  isUsed: boolean;
-};
-
-type LeveledLabel = {
-  name: string;
-  level?: number;
-};
-
-const steamDice: SteamDie[] = [
-  { label: 'De vapeur A', isUsed: false },
-  { label: 'De vapeur B', isUsed: true },
-  { label: 'De vapeur C', isUsed: false }
-];
-
-const summaryCompetences = ['Infiltration', 'Persuasion', 'Pilotage'];
-const summaryTalents: LeveledLabel[] = [
-  { name: 'Nerfs d acier', level: 2 },
-  { name: 'Tir reflexe', level: 1 },
-  { name: 'Analyse rapide' }
-];
-
-const groups: SheetGroup[] = [
-  { id: 'valeurs_secondaires', label: 'Valeurs secondaires', layout: 'grid' },
-  { id: 'reserve_des', label: 'Reserve de des', layout: 'list' },
-  { id: 'competences_selectionnees', label: 'Competences selectionnees', layout: 'list' },
-  { id: 'talents_selectionnes', label: 'Talents selectionnes', layout: 'list' }
-];
-
-const secondaryFields: SheetField[] = [
-  { id: 'pv', label: 'PV', type: 'resource', value: 18, max: 24, groupId: 'valeurs_secondaires', isPrimary: true },
-  {
-    id: 'equilibre',
-    label: 'Equilibre mental',
-    type: 'resource',
-    value: 7,
-    max: 10,
-    groupId: 'valeurs_secondaires',
-    isPrimary: true
-  },
-  {
-    id: 'fortune',
-    label: 'Fortune',
-    type: 'resource',
-    value: 2,
-    max: 5,
-    groupId: 'valeurs_secondaires',
-    isPrimary: true
-  },
-  { id: 'argent', label: 'Argent', type: 'number', value: 120, groupId: 'valeurs_secondaires' },
-  { id: 'influence', label: 'Influence', type: 'number', value: 3, groupId: 'valeurs_secondaires' },
-  { id: 'experience', label: 'Experience', type: 'number', value: 14, groupId: 'valeurs_secondaires' }
-];
-
-const reserveFields: SheetField[] = steamDice.map((die, index) => ({
-  id: `steam-die-${index + 1}`,
-  label: die.label,
-  type: 'tag',
-  value: die.isUsed ? 'Utilise' : 'Disponible',
-  groupId: 'reserve_des'
-}));
-
-const competenceFields: SheetField[] = summaryCompetences.map((competence, index) => ({
-  id: `competence-${index + 1}`,
-  label: competence,
-  type: 'tag',
-  value: competence,
-  groupId: 'competences_selectionnees'
-}));
-
-const talentFields: SheetField[] = summaryTalents.map((talent, index) => ({
-  id: `talent-${index + 1}`,
-  label: `Talent ${index + 1}`,
-  type: 'text',
-  value: talent.level ? `${talent.name} (Niv. ${talent.level})` : talent.name,
-  groupId: 'talents_selectionnes'
-}));
-
-const actions: SheetAction[] = [
-  {
-    id: 'jet-attaque',
-    label: "Jet d'attaque",
-    description: 'Resolution attaque melee ou distance',
-    rollFormula: '1d20 + attaque'
-  },
-  {
-    id: 'test-sang-froid',
-    label: 'Test de Sang-froid',
-    description: 'Resister a la panique',
-    rollFormula: '1d20 + volonte'
-  }
-];
-
-export const mockSteamShadowsSheet: CharacterSheetView = {
-  id: 'character-steamshadows-1',
-  name: 'Aria Volt',
-  portraitUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80',
-  groups,
-  fields: [...secondaryFields, ...reserveFields, ...competenceFields, ...talentFields],
-  actions
-};
+import { useEffect, useMemo, useState } from 'react';
+import { characterRepository, systemRepository } from '../../../data/repositories';
+import { sendSystemMessage } from '../../../stores/chatStore';
+import { Character } from '../../../types/character';
+import { CharacterSheetView, SheetAction, SheetField } from '../../../types/characterSheet';
+import { Session } from '../../../types/session';
+import { GameSystem } from '../../../types/system';
+import { User } from '../../../types/user';
 
 type CharacterWidgetProps = {
-  sheet: CharacterSheetView;
+  currentUser: User;
+  currentSession: Session;
+  role: 'gm' | 'player';
 };
 
-function renderResourceField(field: SheetField) {
+function renderResourceField(
+  field: SheetField,
+  options?: {
+    canEdit: boolean;
+    onDecrease: () => void;
+    onIncrease: () => void;
+  }
+) {
   const value = typeof field.value === 'number' ? field.value : Number(field.value) || 0;
   const max = field.max ?? value;
   const percentage = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
@@ -123,15 +36,21 @@ function renderResourceField(field: SheetField) {
       <div className="character-resource__bar">
         <span style={{ width: `${percentage}%` }} />
       </div>
+      {options?.canEdit ? (
+        <div style={{ display: 'inline-flex', gap: '0.4rem' }}>
+          <button className="button secondary" type="button" onClick={options.onDecrease}>
+            -1
+          </button>
+          <button className="button secondary" type="button" onClick={options.onIncrease}>
+            +1
+          </button>
+        </div>
+      ) : null}
     </article>
   );
 }
 
 function renderField(field: SheetField) {
-  if (field.type === 'resource') {
-    return renderResourceField(field);
-  }
-
   if (field.type === 'number') {
     return (
       <article key={field.id} className="character-number-badge">
@@ -158,59 +77,237 @@ function renderField(field: SheetField) {
   );
 }
 
-export default function CharacterWidget({ sheet }: CharacterWidgetProps) {
-  const primaryFields = sheet.fields.filter((field) => field.isPrimary);
+function canEditCharacter(character: Character, currentUser: User, role: 'gm' | 'player'): boolean {
+  return role === 'gm' || character.ownerUserId === currentUser.id;
+}
+
+function rollFormula(formula: string): { total: number; breakdown: string } {
+  const diceMatch = formula.match(/(\d*)d(\d+)/i);
+  const diceCount = Number(diceMatch?.[1] || 1);
+  const diceSides = Number(diceMatch?.[2] || 20);
+
+  const rolls = Array.from({ length: Math.max(1, diceCount) }, () => Math.floor(Math.random() * diceSides) + 1);
+  const diceSum = rolls.reduce((sum, value) => sum + value, 0);
+
+  const modifiers = Array.from(formula.matchAll(/([+-]\s*\d+)/g)).map((match) => Number(match[1].replace(/\s+/g, '')));
+  const modifierSum = modifiers.reduce((sum, value) => sum + value, 0);
+
+  return {
+    total: diceSum + modifierSum,
+    breakdown: `${rolls.join(' + ')}${modifierSum !== 0 ? ` ${modifierSum > 0 ? '+' : '-'} ${Math.abs(modifierSum)}` : ''}`
+  };
+}
+
+export default function CharacterWidget({ currentUser, currentSession, role }: CharacterWidgetProps) {
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [currentSystem, setCurrentSystem] = useState<GameSystem | null>(null);
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [lastRollResult, setLastRollResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadCharacters() {
+      try {
+        const localCharacters = await characterRepository.listForSession({
+          sessionId: currentSession.id,
+          role,
+          currentUserId: currentUser.id
+        });
+
+        if (isMounted) {
+          setCharacters(localCharacters);
+          setSelectedCharacterId((current) => current ?? localCharacters[0]?.id ?? null);
+        }
+
+        const system = await systemRepository.getById(currentSession.systemId);
+        if (isMounted) {
+          setCurrentSystem(system);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger les fiches.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadCharacters();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentSession.id, currentUser.id, role]);
+
+  const selectedCharacter = useMemo(
+    () => characters.find((character) => character.id === selectedCharacterId) ?? null,
+    [characters, selectedCharacterId]
+  );
+  const availableActions: SheetAction[] =
+    currentSystem?.rollDefinitions?.map((roll) => ({
+      id: roll.id,
+      label: roll.label,
+      description: roll.description,
+      rollFormula: roll.formula
+    })) ?? selectedCharacter?.sheet?.actions ?? [];
+
+  const selectedSheet: CharacterSheetView | null = selectedCharacter?.sheet ?? null;
+  const primaryFields = selectedSheet?.fields.filter((field) => field.isPrimary) ?? [];
+
+  const handleResourceDelta = async (fieldId: string, delta: number) => {
+    if (!selectedCharacter || !selectedSheet) {
+      return;
+    }
+
+    const field = selectedSheet.fields.find((item) => item.id === fieldId && item.type === 'resource');
+    if (!field) {
+      return;
+    }
+
+    const currentValue = typeof field.value === 'number' ? field.value : Number(field.value) || 0;
+    const max = field.max ?? currentValue;
+    const nextValue = Math.max(0, Math.min(max, currentValue + delta));
+
+    try {
+      const updated = await characterRepository.updateResource({
+        characterId: selectedCharacter.id,
+        fieldId,
+        value: nextValue
+      });
+
+      if (!updated) {
+        return;
+      }
+
+      setCharacters((previous) => previous.map((character) => (character.id === updated.id ? updated : character)));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de mettre a jour la ressource.');
+    }
+  };
+
+  const handleActionRoll = (action: SheetAction) => {
+    if (!selectedCharacter) {
+      return;
+    }
+
+    const formula = action.rollFormula ?? '1d20';
+    const result = rollFormula(formula);
+    const text = `${selectedCharacter.name} lance ${action.label}: ${result.total} (${result.breakdown})`;
+    setLastRollResult(text);
+
+    sendSystemMessage({
+      sessionId: currentSession.id,
+      content: text,
+      systemType: 'roll'
+    });
+  };
 
   return (
     <div className="character-widget">
-      <header className="character-widget__header">
-        {sheet.portraitUrl ? (
-          <img src={sheet.portraitUrl} alt={`Portrait de ${sheet.name}`} className="character-widget__portrait" />
-        ) : null}
-        <div>
-          <h3 style={{ margin: 0 }}>{sheet.name}</h3>
-          <p style={{ margin: '0.3rem 0 0', color: '#475467' }}>SteamShadows - Fiche multi-systeme</p>
-        </div>
-      </header>
+      {isLoading ? <p style={{ margin: 0 }}>Chargement de la fiche...</p> : null}
+      {errorMessage ? <p style={{ color: '#b42318', margin: 0 }}>{errorMessage}</p> : null}
+      {!isLoading && !errorMessage && characters.length === 0 ? <p style={{ margin: 0 }}>Aucune fiche disponible.</p> : null}
 
-      {primaryFields.length > 0 ? (
-        <section className="character-widget__summary">
-          <h4 style={{ margin: 0 }}>Resume</h4>
-          <div className="character-widget__summary-grid">{primaryFields.map((field) => renderField(field))}</div>
-        </section>
-      ) : null}
-
-      {sheet.groups.map((group) => {
-        const groupedFields = sheet.fields.filter((field) => field.groupId === group.id && !field.isPrimary);
-        return (
-          <section key={group.id} className="character-widget__group">
-            <h4 style={{ margin: 0 }}>{group.label}</h4>
-            <div className={group.layout === 'list' ? 'character-fields list' : 'character-fields grid'}>
-              {groupedFields.map((field) => renderField(field))}
-            </div>
-          </section>
-        );
-      })}
-
-      {sheet.actions?.length ? (
-        <section className="character-widget__actions">
-          <h4 style={{ margin: 0 }}>Actions</h4>
-          <div className="character-widget__actions-list">
-            {sheet.actions.map((action) => (
-              <button
-                type="button"
-                className="button secondary"
-                key={action.id}
-                onClick={() => {
-                  console.log('Action clicked', action);
-                }}
-                title={action.description}
+      {!isLoading && !errorMessage && characters.length > 0 && selectedCharacter && selectedSheet ? (
+        <>
+          {role === 'gm' && characters.length > 1 ? (
+            <label style={{ display: 'grid', gap: '0.35rem' }}>
+              <span>Fiche active</span>
+              <select
+                value={selectedCharacter.id}
+                onChange={(event) => setSelectedCharacterId(event.target.value)}
+                style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '0.45rem' }}
               >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        </section>
+                {characters.map((character) => (
+                  <option key={character.id} value={character.id}>
+                    {character.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <header className="character-widget__header">
+            {selectedSheet.portraitUrl ? (
+              <img
+                src={selectedSheet.portraitUrl}
+                alt={`Portrait de ${selectedSheet.name}`}
+                className="character-widget__portrait"
+              />
+            ) : null}
+            <div>
+              <h3 style={{ margin: 0 }}>{selectedSheet.name}</h3>
+              <p style={{ margin: '0.3rem 0 0', color: '#475467' }}>
+                {currentSystem ? `${currentSystem.name} - ` : ''}Fiche locale synchronisable
+              </p>
+            </div>
+          </header>
+
+          {lastRollResult ? (
+            <p style={{ margin: 0, color: '#155eef' }}>
+              Dernier jet: <strong>{lastRollResult}</strong>
+            </p>
+          ) : null}
+
+          {primaryFields.length > 0 ? (
+            <section className="character-widget__summary">
+              <h4 style={{ margin: 0 }}>Resume</h4>
+              <div className="character-widget__summary-grid">
+                {primaryFields.map((field) =>
+                  field.type === 'resource'
+                    ? renderResourceField(field, {
+                        canEdit: canEditCharacter(selectedCharacter, currentUser, role),
+                        onDecrease: () => {
+                          void handleResourceDelta(field.id, -1);
+                        },
+                        onIncrease: () => {
+                          void handleResourceDelta(field.id, 1);
+                        }
+                      })
+                    : renderField(field)
+                )}
+              </div>
+            </section>
+          ) : null}
+
+          {selectedSheet.groups.map((group) => {
+            const groupedFields = selectedSheet.fields.filter((field) => field.groupId === group.id && !field.isPrimary);
+            return (
+              <section key={group.id} className="character-widget__group">
+                <h4 style={{ margin: 0 }}>{group.label}</h4>
+                <div className={group.layout === 'list' ? 'character-fields list' : 'character-fields grid'}>
+                  {groupedFields.map((field) => renderField(field))}
+                </div>
+              </section>
+            );
+          })}
+
+          {availableActions.length > 0 ? (
+            <section className="character-widget__actions">
+              <h4 style={{ margin: 0 }}>Actions</h4>
+              <div className="character-widget__actions-list">
+                {availableActions.map((action) => (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    key={action.id}
+                    onClick={() => {
+                      handleActionRoll(action);
+                    }}
+                    title={action.description}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

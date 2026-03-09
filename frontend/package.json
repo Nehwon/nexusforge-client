@@ -5,10 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "lint": "npm run typecheck",
+    "build": "npm run typecheck && vite build",
+    "test": "npm run test:run",
+    "test:run": "node -e \"console.log('No tests configured yet')\"",
     "preview": "vite preview"
   },
   "dependencies": {
+    "dexie": "^4.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.1"
