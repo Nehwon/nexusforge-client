@@ -155,3 +155,22 @@ npm run build
 ```
 
 Puis déployer le contenu de `frontend/dist` sur l'hébergement web (ex: o2switch).
+
+### Backend MVP inclus dans ce repo
+
+Un backend Express minimal est disponible dans `backend/`.
+
+Lancement local:
+
+```bash
+cd backend
+npm install
+cp .env.example .env
+npm start
+```
+
+Healthcheck:
+
+```bash
+curl http://127.0.0.1:4000/health
+```
