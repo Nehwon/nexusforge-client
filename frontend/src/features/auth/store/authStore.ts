@@ -18,11 +18,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    const hasAdminRole = normalizedEmail.includes('admin');
+    const hasGmRole = normalizedEmail.includes('gm') || hasAdminRole;
     const user: User = {
-      id: normalizedEmail.includes('gm') ? 'user-gm-1' : 'user-player-1',
+      id: hasAdminRole ? 'user-admin-1' : hasGmRole ? 'user-gm-1' : 'user-player-1',
       email: normalizedEmail,
-      displayName: normalizedEmail.includes('gm') ? 'MJ Mock' : 'Joueur Mock',
-      roles: normalizedEmail.includes('gm') ? ['gm'] : ['player'],
+      displayName: hasAdminRole ? 'Admin Mock' : hasGmRole ? 'MJ Mock' : 'Joueur Mock',
+      roles: hasAdminRole ? ['admin', 'gm'] : hasGmRole ? ['gm'] : ['player'],
       isEmailVerified: true,
       createdAt: new Date().toISOString()
     };

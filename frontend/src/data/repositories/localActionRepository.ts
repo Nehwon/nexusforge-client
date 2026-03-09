@@ -34,6 +34,11 @@ export const localActionRepository = {
     return db.localActions.where('syncStatus').equals('pending').sortBy('createdAt');
   },
 
+  async listAll(): Promise<LocalAction[]> {
+    await ensureDatabaseIsInitialized();
+    return db.localActions.toArray();
+  },
+
   async listSyncCandidates(): Promise<LocalAction[]> {
     await ensureDatabaseIsInitialized();
     const all = await db.localActions.toArray();

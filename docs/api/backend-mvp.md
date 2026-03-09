@@ -675,3 +675,252 @@ Le serveur n'envoie l'event qu'aux clients qui ont le droit de voir le message.
   - `backend/src/middleware/auth.js`
   - `backend/src/utils/errors.js`
 - Toute nouvelle route doit utiliser le format d'erreur standard.
+
+## 10. Systeme de jeu visuel (rules program)
+
+Cette section couvre la programmation visuelle type Scratch pour:
+
+- calcul automatique de stats secondaires
+- définition de jets de dés paramétrables
+
+### 10.1. Modèle RulesProgramBlock
+
+`GameSystem` accepte désormais `rulesProgram`:
+
+```json
+{
+  "id": "sys-dnd5e-like",
+  "name": "SteamShadows Core",
+  "version": "0.1.0",
+  "ownerUserId": "user-gm-1",
+  "visibility": "public",
+  "rulesProgram": [
+    {
+      "id": "rule-defense",
+      "type": "set_secondary_stat",
+      "label": "Defense",
+      "targetFieldId": "defense",
+      "sourceFieldIds": ["agility", "fortitude"],
+      "operation": "sum",
+      "constantModifier": 1,
+      "rounding": "round"
+    },
+    {
+      "id": "rule-roll-attack",
+      "type": "define_roll",
+      "actionId": "attack_roll",
+      "label": "Jet d attaque",
+      "description": "Action standard",
+      "diceCount": 1,
+      "diceSides": 20,
+      "modifierFieldId": "defense",
+      "flatModifier": 0
+    }
+  ],
+  "referenceSheets": [
+    {
+      "id": "template-pj",
+      "name": "Template PJ",
+      "groups": [],
+      "fields": [],
+      "actions": []
+    }
+  ]
+}
+```
+
+Valeurs autorisées:
+
+- `operation`: `sum | subtract | multiply | average`
+- `rounding`: `none | floor | ceil | round`
+
+### 10.2. GET `/api/systems`
+
+Liste des systèmes accessibles pour l'utilisateur courant.
+
+Query optionnelles:
+
+- `owned=true` (retourne uniquement les systèmes du currentUser)
+- `visibility=public|private`
+
+Réponse `200`:
+
+```json
+{
+  "items": []
+}
+```
+
+### 10.3. GET `/api/systems/{systemId}`
+
+Retourne un système complet avec `rulesProgram`.
+
+Réponse `200`:
+
+```json
+{
+  "system": {}
+}
+```
+
+Erreurs:
+
+- `404 SYSTEM_NOT_FOUND`
+- `403 SYSTEM_ACCESS_FORBIDDEN`
+
+### 10.4. POST `/api/systems`
+
+Crée un système.
+
+Body:
+
+```json
+{
+  "name": "Mon systeme maison",
+  "version": "0.1.0",
+  "visibility": "private",
+  "tags": ["custom"],
+  "rulesProgram": [],
+  "referenceSheets": []
+}
+```
+
+Réponse `201`:
+
+```json
+{
+  "system": {}
+}
+```
+
+### 10.5. PATCH `/api/systems/{systemId}`
+
+Met à jour les métadonnées (`name`, `version`, `tags`, `visibility`) et/ou `rulesProgram` et/ou `referenceSheets`.
+
+Body:
+
+```json
+{
+  "rulesProgram": [],
+  "referenceSheets": []
+}
+```
+
+Réponse `200`:
+
+```json
+{
+  "system": {}
+}
+```
+
+### 10.6. PATCH `/api/systems/{systemId}/rules-program`
+
+Endpoint spécialisé pour remplacer le programme de blocs visuels.
+
+Body:
+
+```json
+{
+  "rulesProgram": []
+}
+```
+
+Réponse `200`:
+
+```json
+{
+  "system": {}
+}
+```
+
+Erreurs:
+
+- `400 INVALID_SYSTEM_RULES_PROGRAM`
+- `404 SYSTEM_NOT_FOUND`
+
+### 10.7. Permissions d'edition
+
+- Lecture:
+  - tous les systemes `visibility=public`
+  - les systemes prives du proprietaire
+  - tous les systemes pour un `admin`
+- Edition (`PATCH /api/systems/*`):
+  - proprietaire du systeme (`ownerUserId`)
+  - ou `admin`
+
+Erreur standard si non autorise:
+
+- `403 SYSTEM_EDIT_FORBIDDEN`
+
+### 10.8. Fiches de reference integrees au systeme
+
+Un systeme embarque `referenceSheets` (fiches modele) utilisees en session pour creer les fiches de PJ/PNJ.
+
+Exemple partiel:
+
+```json
+{
+  "system": {
+    "id": "sys_x",
+    "ownerUserId": "user-gm-1",
+    "visibility": "public",
+    "referenceSheets": [
+      {
+        "id": "template-1",
+        "name": "Template Aventurier",
+        "groups": [],
+        "fields": [],
+        "actions": []
+      }
+    ]
+  }
+}
+```
+
+Creation d'une fiche depuis un template (scope session):
+
+- `POST /api/sessions/{sessionId}/characters/from-template`
+
+Body:
+
+```json
+{
+  "systemId": "sys_x",
+  "templateId": "template-1",
+  "name": "Aria Volt"
+}
+```
+
+Reponse `201`:
+
+```json
+{
+  "character": {}
+}
+```
+
+### 10.9. POST `/api/systems/{systemId}/duplicate`
+
+Duplique un système accessible pour l'utilisateur courant.
+
+Body optionnel:
+
+```json
+{
+  "name": "SteamShadows Core (copie)"
+}
+```
+
+Réponse `201`:
+
+```json
+{
+  "system": {}
+}
+```
+
+Erreurs:
+
+- `404 SYSTEM_NOT_FOUND`
+- `403 SYSTEM_ACCESS_FORBIDDEN`

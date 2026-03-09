@@ -1,5 +1,6 @@
 import { db, ensureDatabaseIsInitialized } from '../db';
 import { Character } from '../../types/character';
+import { CharacterSheetView } from '../../types/characterSheet';
 import { localActionRepository } from './localActionRepository';
 
 export const characterRepository = {
@@ -18,6 +19,50 @@ export const characterRepository = {
     await ensureDatabaseIsInitialized();
     const character = await db.characters.get(characterId);
     return character ?? null;
+  },
+
+  async createFromReferenceSheet(params: {
+    sessionId: string;
+    systemId: string;
+    templateId: string;
+    template: CharacterSheetView;
+    ownerUserId?: string | null;
+    name?: string;
+  }): Promise<Character> {
+    await ensureDatabaseIsInitialized();
+
+    const characterId = `character-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const characterName = params.name?.trim() || params.template.name || 'Nouveau personnage';
+
+    const clonedSheet: CharacterSheetView = {
+      ...params.template,
+      id: characterId,
+      name: characterName,
+      fields: params.template.fields.map((field) => ({ ...field })),
+      groups: params.template.groups.map((group) => ({ ...group })),
+      actions: params.template.actions?.map((action) => ({ ...action }))
+    };
+
+    const character: Character = {
+      id: characterId,
+      systemId: params.systemId,
+      templateId: params.templateId,
+      sessionId: params.sessionId,
+      name: characterName,
+      type: 'pc',
+      ownerUserId: params.ownerUserId ?? null,
+      sheet: clonedSheet
+    };
+
+    await db.characters.put(character);
+    await localActionRepository.enqueue({
+      entityType: 'character',
+      entityId: character.id,
+      actionType: 'create',
+      payload: character as unknown as Record<string, unknown>
+    });
+
+    return character;
   },
 
   async updateResource(params: { characterId: string; fieldId: string; value: number }): Promise<Character | null> {

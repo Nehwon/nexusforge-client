@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { characterRepository, systemRepository } from '../../../data/repositories';
+import { applyRulesProgramToSheet, rollForAction } from '../../../services/systemRulesEngine';
 import { sendSystemMessage } from '../../../stores/chatStore';
 import { Character } from '../../../types/character';
 import { CharacterSheetView, SheetAction, SheetField } from '../../../types/characterSheet';
@@ -81,27 +82,12 @@ function canEditCharacter(character: Character, currentUser: User, role: 'gm' | 
   return role === 'gm' || character.ownerUserId === currentUser.id;
 }
 
-function rollFormula(formula: string): { total: number; breakdown: string } {
-  const diceMatch = formula.match(/(\d*)d(\d+)/i);
-  const diceCount = Number(diceMatch?.[1] || 1);
-  const diceSides = Number(diceMatch?.[2] || 20);
-
-  const rolls = Array.from({ length: Math.max(1, diceCount) }, () => Math.floor(Math.random() * diceSides) + 1);
-  const diceSum = rolls.reduce((sum, value) => sum + value, 0);
-
-  const modifiers = Array.from(formula.matchAll(/([+-]\s*\d+)/g)).map((match) => Number(match[1].replace(/\s+/g, '')));
-  const modifierSum = modifiers.reduce((sum, value) => sum + value, 0);
-
-  return {
-    total: diceSum + modifierSum,
-    breakdown: `${rolls.join(' + ')}${modifierSum !== 0 ? ` ${modifierSum > 0 ? '+' : '-'} ${Math.abs(modifierSum)}` : ''}`
-  };
-}
-
 export default function CharacterWidget({ currentUser, currentSession, role }: CharacterWidgetProps) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [currentSystem, setCurrentSystem] = useState<GameSystem | null>(null);
   const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [newCharacterName, setNewCharacterName] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastRollResult, setLastRollResult] = useState<string | null>(null);
@@ -109,7 +95,7 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
   useEffect(() => {
     let isMounted = true;
 
-    async function loadCharacters() {
+    async function loadCharactersAndSystem() {
       try {
         const localCharacters = await characterRepository.listForSession({
           sessionId: currentSession.id,
@@ -125,6 +111,7 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
         const system = await systemRepository.getById(currentSession.systemId);
         if (isMounted) {
           setCurrentSystem(system);
+          setSelectedTemplateId((current) => current ?? system?.referenceSheets?.[0]?.id ?? null);
         }
       } catch (error) {
         if (isMounted) {
@@ -137,27 +124,48 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
       }
     }
 
-    void loadCharacters();
+    void loadCharactersAndSystem();
+
+    const handleSystemUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ systemId?: string }>;
+      if (customEvent.detail?.systemId && customEvent.detail.systemId !== currentSession.systemId) {
+        return;
+      }
+      void loadCharactersAndSystem();
+    };
+
+    window.addEventListener('system-updated', handleSystemUpdated as EventListener);
 
     return () => {
       isMounted = false;
+      window.removeEventListener('system-updated', handleSystemUpdated as EventListener);
     };
-  }, [currentSession.id, currentUser.id, role]);
+  }, [currentSession.id, currentSession.systemId, currentUser.id, role]);
 
   const selectedCharacter = useMemo(
     () => characters.find((character) => character.id === selectedCharacterId) ?? null,
     [characters, selectedCharacterId]
   );
+  const selectedSheet: CharacterSheetView | null = useMemo(() => {
+    if (!selectedCharacter?.sheet) {
+      return null;
+    }
+
+    return applyRulesProgramToSheet(selectedCharacter.sheet, currentSystem);
+  }, [currentSystem, selectedCharacter?.id, selectedCharacter?.sheet]);
+
   const availableActions: SheetAction[] =
+    selectedSheet?.actions ??
     currentSystem?.rollDefinitions?.map((roll) => ({
       id: roll.id,
       label: roll.label,
       description: roll.description,
       rollFormula: roll.formula
-    })) ?? selectedCharacter?.sheet?.actions ?? [];
+    })) ??
+    [];
 
-  const selectedSheet: CharacterSheetView | null = selectedCharacter?.sheet ?? null;
   const primaryFields = selectedSheet?.fields.filter((field) => field.isPrimary) ?? [];
+  const availableTemplates = currentSystem?.referenceSheets ?? [];
 
   const handleResourceDelta = async (fieldId: string, delta: number) => {
     if (!selectedCharacter || !selectedSheet) {
@@ -195,8 +203,11 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
       return;
     }
 
-    const formula = action.rollFormula ?? '1d20';
-    const result = rollFormula(formula);
+    if (!selectedSheet) {
+      return;
+    }
+
+    const result = rollForAction(action, selectedSheet);
     const text = `${selectedCharacter.name} lance ${action.label}: ${result.total} (${result.breakdown})`;
     setLastRollResult(text);
 
@@ -207,11 +218,71 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
     });
   };
 
+  const handleCreateCharacterFromTemplate = async () => {
+    if (!currentSystem || !selectedTemplateId) {
+      return;
+    }
+
+    const template = availableTemplates.find((item) => item.id === selectedTemplateId);
+    if (!template) {
+      setErrorMessage('Template de reference introuvable.');
+      return;
+    }
+
+    try {
+      const created = await characterRepository.createFromReferenceSheet({
+        sessionId: currentSession.id,
+        systemId: currentSystem.id,
+        templateId: selectedTemplateId,
+        template,
+        ownerUserId: role === 'player' ? currentUser.id : null,
+        name: newCharacterName.trim() || template.name
+      });
+
+      setCharacters((previous) => [...previous, created]);
+      setSelectedCharacterId(created.id);
+      setNewCharacterName('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Impossible de creer la fiche depuis le template.');
+    }
+  };
+
   return (
     <div className="character-widget">
       {isLoading ? <p style={{ margin: 0 }}>Chargement de la fiche...</p> : null}
       {errorMessage ? <p style={{ color: '#b42318', margin: 0 }}>{errorMessage}</p> : null}
       {!isLoading && !errorMessage && characters.length === 0 ? <p style={{ margin: 0 }}>Aucune fiche disponible.</p> : null}
+
+      {!isLoading && !errorMessage && availableTemplates.length > 0 ? (
+        <section className="character-widget__actions">
+          <h4 style={{ margin: 0 }}>Creer une fiche depuis un modele</h4>
+          <div style={{ display: 'grid', gap: '0.45rem', gridTemplateColumns: '1fr 1fr auto' }}>
+            <select
+              value={selectedTemplateId ?? ''}
+              onChange={(event) => {
+                setSelectedTemplateId(event.target.value);
+              }}
+              style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '0.45rem' }}
+            >
+              {availableTemplates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={newCharacterName}
+              placeholder="Nom de la fiche"
+              onChange={(event) => setNewCharacterName(event.target.value)}
+              style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '0.45rem' }}
+            />
+            <button className="button secondary" type="button" onClick={() => void handleCreateCharacterFromTemplate()}>
+              Creer
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       {!isLoading && !errorMessage && characters.length > 0 && selectedCharacter && selectedSheet ? (
         <>

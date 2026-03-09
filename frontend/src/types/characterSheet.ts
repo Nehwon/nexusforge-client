@@ -14,11 +14,20 @@ export interface SheetGroup {
   layout?: 'grid' | 'list';
 }
 
+export interface SheetRollConfig {
+  sourceBlockId?: string;
+  diceCount: number;
+  diceSides: number;
+  modifierFieldId?: string;
+  flatModifier?: number;
+}
+
 export interface SheetAction {
   id: string;
   label: string;
   description?: string;
   rollFormula?: string;
+  rollConfig?: SheetRollConfig;
 }
 
 export interface CharacterSheetView {

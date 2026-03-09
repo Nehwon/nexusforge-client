@@ -9,10 +9,11 @@ import ChatWidget from '../widgets/ChatWidget';
 import DocumentsWidget from '../widgets/DocumentsWidget';
 import InitiativeWidget from '../widgets/InitiativeWidget';
 import NotesWidget from '../widgets/NotesWidget';
+import SystemBuilderWidget from '../widgets/SystemBuilderWidget';
 
 export type WidgetConfig = {
   id: string;
-  type: 'initiative' | 'character' | 'chat' | 'documents' | 'notes';
+  type: 'initiative' | 'character' | 'chat' | 'documents' | 'notes' | 'system-builder';
   title: string;
 };
 
@@ -35,6 +36,8 @@ function renderWidget(type: WidgetConfig['type'], context: Omit<DashboardLayoutP
       return <DocumentsWidget currentUser={context.currentUser} currentSession={context.currentSession} role={context.role} />;
     case 'notes':
       return <NotesWidget currentUser={context.currentUser} currentSession={context.currentSession} role={context.role} />;
+    case 'system-builder':
+      return <SystemBuilderWidget currentUser={context.currentUser} currentSession={context.currentSession} role={context.role} />;
     default:
       return null;
   }

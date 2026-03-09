@@ -78,11 +78,23 @@ Elle permet de créer des systèmes de jeu génériques, gérer fiches de person
 
 ## État du projet
 
-> Projet en phase de **prototype initial**.  
-> La documentation de conception est en place et le frontend V1 est bootstrapé (routing, auth mock, dashboard stub).
+Le projet est en **prototype fonctionnel offline-first** avec:
 
-Suivi détaillé de l'avancement: [`docs/suivi-travail.md`](docs/suivi-travail.md).
-Contrats API (en cours): [`docs/api/index.md`](docs/api/index.md).
+- session locale (chargement IndexedDB),
+- chat persistant,
+- initiative persistante,
+- notes/documents persistants,
+- sync locale avec gestion des conflits,
+- dashboard multi-profils par compte/rôle (drag & drop + tailles widgets),
+- catalogue des systèmes de jeu (sélection, création, duplication),
+- éditeur visuel de système type Scratch (blocs + drag & drop),
+- templates de fiches de référence (CRUD, drag & drop champs/groupes, preview),
+- création de fiches de session depuis templates système,
+- permissions d'édition des systèmes (propriétaire ou admin),
+- seed `SteamShadows Core` enrichi (PJ, PNJ, Créature, Horreurs Arcanum).
+
+Suivi détaillé de l'avancement: [`docs/suivi-travail.md`](docs/suivi-travail.md).  
+Contrats API (MVP): [`docs/api/index.md`](docs/api/index.md).
 
 ---
 

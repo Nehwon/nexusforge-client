@@ -169,6 +169,13 @@ Dernière mise à jour: 2026-03-09
   - `resolveConflictField(actionId, fieldName, strategy)`
   - stockage des valeurs serveur en conflit (`conflictServerValues`)
 
+### Observabilité sync (Sprint 2 - extension)
+
+- Panneau `SyncStatusPanel` ajouté dans la vue session:
+  - compteurs `total`, `pending`, `conflicts`, `failed`, `synced`,
+  - bouton `Synchroniser maintenant`,
+  - affichage du dernier rapport de cycle (`processed/synced/conflicts/failed/rejected/skipped`).
+
 ### Dashboard configurable par compte/rôle (Sprint 2 - extension)
 
 - Profils dashboard persistés en base locale (`dashboardProfiles`) avec séparation par:
@@ -188,6 +195,80 @@ Dernière mise à jour: 2026-03-09
   - renommage inline des profils d'interface,
   - indicateur visuel de cible pendant le drag & drop.
 - Le dashboard charge désormais le profil favori (ou le premier) pour le compte + rôle courant.
+
+### Systèmes de jeu - catalogue & permissions (Sprint 3)
+
+- `GameSystem` enrichi:
+  - `ownerUserId`
+  - `visibility` (`public` / `private`)
+  - `rulesProgram`
+  - `referenceSheets`
+- `systemRepository` étendu:
+  - `listAvailableForUser`
+  - `getByIdForUser`
+  - `create`
+  - `duplicate`
+  - contrôle d'édition propriétaire/admin.
+- `SystemCatalogPanel` ajouté en session:
+  - sélection du système actif de session,
+  - création d'un système,
+  - duplication du système courant,
+  - indication explicite des droits d'édition.
+- Auth mock enrichie avec rôle `admin` (email contenant `admin`).
+
+### Éditeur visuel de système (Sprint 3)
+
+- `SystemBuilderWidget` ajouté au dashboard MJ.
+- Programmation visuelle type Scratch:
+  - blocs `set_secondary_stat`
+  - blocs `define_roll`
+  - ordre des blocs par drag & drop.
+- Moteur `systemRulesEngine`:
+  - calcul automatique des statistiques secondaires,
+  - génération d'actions de jet depuis les blocs,
+  - exécution des jets avec modificateurs de champs.
+- `CharacterWidget` connecté au moteur:
+  - application auto des règles système,
+  - rafraîchissement à la sauvegarde du système.
+- Protection d'édition:
+  - mode lecture seule si utilisateur non propriétaire et non admin.
+
+### Templates de fiches de référence (Sprint 3 - extension)
+
+- CRUD des templates dans l'éditeur système:
+  - création
+  - duplication
+  - renommage
+  - suppression
+- Édition des champs:
+  - ajout/suppression de champs (`number`, `resource`, `text`, `tag`)
+  - mise à jour label/valeur/max
+- Gestion des groupes:
+  - création/suppression de groupe
+  - renommage
+  - layout `grid` / `list`
+- Drag & drop:
+  - réordonnancement des champs
+  - déplacement inter-groupes
+- Mode preview:
+  - rendu de la fiche finale directement dans l'éditeur,
+  - application des règles `rulesProgram` dans l'aperçu.
+
+### Fiches de session depuis templates (Sprint 3 - extension)
+
+- `characterRepository.createFromReferenceSheet` ajouté.
+- `CharacterWidget` permet de créer une fiche en session depuis un template du système.
+
+### Seed SteamShadows Core (Sprint 3 - extension)
+
+- Système `SteamShadows Core` enrichi avec templates:
+  - PJ
+  - PNJ
+  - Créature
+- Template `Horreur (Arcanum)` ajouté (base MJ).
+- Bestiaire instancié:
+  - génération automatique d'une fiche de référence par Horreur connue (Cercles I à V),
+  - préremplissage cercle, dé associé, type parasite, actions de jet.
 
 ---
 

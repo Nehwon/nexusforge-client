@@ -4,11 +4,14 @@ import Layout from '../../../components/Layout';
 import { useAuth } from '../../../hooks/useAuth';
 import { Session } from '../../../types/session';
 import SessionHeader from '../components/SessionHeader';
+import SystemCatalogPanel from '../components/SystemCatalogPanel';
 import SyncConflictsPanel from '../components/SyncConflictsPanel';
+import SyncStatusPanel from '../components/SyncStatusPanel';
 import DashboardLayout, { WidgetConfig } from '../../dashboard/components/DashboardLayout';
 import { sessionRepository } from '../../../data/repositories';
 
 const gmWidgets: WidgetConfig[] = [
+  { id: 'system-builder', type: 'system-builder', title: 'Systeme de jeu (Scratch)' },
   { id: 'initiative', type: 'initiative', title: 'Initiative & Combat' },
   { id: 'characters', type: 'character', title: 'Fiches' },
   { id: 'chat', type: 'chat', title: 'Chat & Messages' },
@@ -84,11 +87,20 @@ export default function SessionViewPage() {
   }
 
   const role: 'gm' | 'player' =
-    currentUser.id === session.gmUserId || currentUser.email.includes('gm') ? 'gm' : 'player';
+    currentUser.id === session.gmUserId || currentUser.roles.includes('gm') || currentUser.roles.includes('admin')
+      ? 'gm'
+      : 'player';
 
   return (
     <Layout>
       <SessionHeader sessionName={session.name} sessionState={session.state} role={role} />
+      <SystemCatalogPanel
+        currentUser={currentUser}
+        currentSession={session}
+        role={role}
+        onSessionChange={(nextSession) => setSession(nextSession)}
+      />
+      <SyncStatusPanel />
       <SyncConflictsPanel />
       <DashboardLayout
         role={role}
