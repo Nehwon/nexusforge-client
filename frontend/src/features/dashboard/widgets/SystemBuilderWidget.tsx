@@ -628,7 +628,7 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
       ) : null}
 
       <fieldset className="system-builder__fieldset" disabled={!canEdit}>
-        <section className="system-builder__reference">
+        <section className="system-builder__reference system-builder__panel system-builder__panel--right">
           <header className="system-builder__reference-header">
             <strong>Templates de fiche de reference</strong>
             <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -1001,9 +1001,13 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
         </button>
         </div>
 
-        {statusMessage ? <p style={{ margin: 0, color: '#067647' }}>{statusMessage}</p> : null}
+        {statusMessage ? (
+          <p className="system-builder__status" style={{ margin: 0, color: '#067647' }}>
+            {statusMessage}
+          </p>
+        ) : null}
 
-        <section className="system-builder__groups-panel">
+        <section className="system-builder__groups-panel system-builder__panel system-builder__panel--left">
           <strong>Presentation des groupes</strong>
           <div className="system-builder__groups-editor">
             {draftRulesGroups.map((group) => (
@@ -1064,7 +1068,7 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
         {draftProgram.length === 0 ? (
           <p style={{ margin: 0 }}>Aucun bloc. Ajoute un bloc pour definir les calculs et jets.</p>
         ) : (
-          <div className="system-builder__list system-builder__list--grouped">
+          <div className="system-builder__list system-builder__list--grouped system-builder__panel system-builder__panel--center">
           {displayedGroups.map((group) => (
             <section
               key={group.id}
