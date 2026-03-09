@@ -5,7 +5,8 @@
 
 ## Couverture actuelle côté frontend
 
-- Auth mock + routes protégées.
+- Auth réelle backend (inscription, validation email, approbation admin, login JWT, reset password, 2FA TOTP).
+- Routes protégées + espace admin pour valider les comptes.
 - Sessions locales + binding du `systemId` de session.
 - Systèmes de jeu:
   - listing des systèmes disponibles pour l'utilisateur,

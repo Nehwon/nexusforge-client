@@ -41,10 +41,14 @@ export default function SessionsListPage() {
 
   return (
     <Layout>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
           <h1>Sessions</h1>
           <p style={{ marginTop: 0 }}>Connecté en tant que {currentUser?.displayName}</p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Link to="/account/security">Sécurité du compte</Link>
+            {currentUser?.roles.includes('admin') ? <Link to="/admin/users/pending">Validation comptes</Link> : null}
+          </div>
         </div>
         <Button variant="secondary" onClick={logout}>
           Se déconnecter

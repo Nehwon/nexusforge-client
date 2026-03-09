@@ -1,13 +1,28 @@
 import { FormEvent, useState } from 'react';
+import { Link } from 'react-router-dom';
 import Button from '../../../components/Button';
 
+type LoginSubmitParams = {
+  email: string;
+  password: string;
+  totpCode?: string;
+  challengeToken?: string;
+};
+
+type LoginFormResult =
+  | { status: 'authenticated' }
+  | { status: 'requires_2fa'; challengeToken: string }
+  | { status: 'error'; message: string };
+
 type LoginFormProps = {
-  onSubmit: (email: string, password: string) => Promise<void>;
+  onSubmit: (params: LoginSubmitParams) => Promise<LoginFormResult>;
 };
 
 export default function LoginForm({ onSubmit }: LoginFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +32,21 @@ export default function LoginForm({ onSubmit }: LoginFormProps) {
     setError(null);
 
     try {
-      await onSubmit(email, password);
+      const result = await onSubmit({
+        email,
+        password,
+        ...(totpCode ? { totpCode } : {}),
+        ...(challengeToken ? { challengeToken } : {})
+      });
+
+      if (result.status === 'requires_2fa') {
+        setChallengeToken(result.challengeToken);
+        return;
+      }
+
+      if (result.status === 'error') {
+        setError(result.message);
+      }
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : 'Connexion impossible.');
     } finally {
@@ -35,6 +64,7 @@ export default function LoginForm({ onSubmit }: LoginFormProps) {
         value={email}
         onChange={(event) => setEmail(event.target.value)}
         required
+        disabled={Boolean(challengeToken)}
       />
 
       <label htmlFor="password">Mot de passe</label>
@@ -45,13 +75,35 @@ export default function LoginForm({ onSubmit }: LoginFormProps) {
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         required
+        disabled={Boolean(challengeToken)}
       />
+
+      {challengeToken ? (
+        <>
+          <label htmlFor="totp">Code 2FA (TOTP)</label>
+          <input
+            id="totp"
+            type="text"
+            placeholder="123456"
+            value={totpCode}
+            onChange={(event) => setTotpCode(event.target.value)}
+            inputMode="numeric"
+            required
+          />
+          <p style={{ margin: 0, color: '#475467' }}>Saisis le code de ton application d'authentification.</p>
+        </>
+      ) : null}
 
       {error ? <p style={{ color: '#b42318', margin: 0 }}>{error}</p> : null}
 
       <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? 'Connexion...' : 'Se connecter'}
+        {isSubmitting ? 'Connexion...' : challengeToken ? 'Valider le code 2FA' : 'Se connecter'}
       </Button>
+
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <Link to="/register">Créer un compte</Link>
+        <Link to="/forgot-password">Mot de passe oublié</Link>
+      </div>
     </form>
   );
 }

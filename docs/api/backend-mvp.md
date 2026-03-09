@@ -1,35 +1,15 @@
 # API Backend MVP
 
-Ce document décrit l'API backend actuellement implémentée pour NexusForge (MVP en mémoire, sans base persistante).
+Document de référence pour l'API backend actuellement implémentée dans `backend/src/server.js`.
 
-## 1. Scope MVP
+## Base URL et format
 
-- Auth JWT (access + refresh)
-- Sessions de jeu et participants
-- Chat par session (channels + messages)
-- Personnages (CRUD)
-- Vue de fiche générique `CharacterSheetView`
-- WebSocket pour diffusion des nouveaux messages
-
-## 2. Base URL et format
-
-- Base URL REST: `/api`
+- Base REST: `/api`
 - Healthcheck: `GET /health`
-- Content-Type attendu: `application/json`
+- JSON `application/json`
+- Auth Bearer requise sur tous les endpoints `/api/*` sauf endpoints auth publics.
 
-### 2.1. Auth JWT
-
-Tous les endpoints `/api/*` (sauf `/api/auth/login`, `/api/auth/register`, `/api/auth/refresh`) exigent:
-
-```http
-Authorization: Bearer <accessToken>
-```
-
-Le `currentUser` est résolu depuis le token (`sub`, `email`, `displayName`).
-
-### 2.2. Format d'erreur standard
-
-Toutes les erreurs backend suivent ce format:
+Format d'erreur standard:
 
 ```json
 {
@@ -41,886 +21,217 @@ Toutes les erreurs backend suivent ce format:
 }
 ```
 
-- `code`: stable, technique, `SCREAMING_SNAKE_CASE`
-- `message`: texte lisible
-- `details`: optionnel
+## Auth publique
 
-Exemples de codes utilisés:
+### `POST /api/auth/register`
 
-- `UNAUTHENTICATED`
-- `INVALID_CREDENTIALS`
-- `EMAIL_ALREADY_REGISTERED`
-- `REFRESH_TOKEN_REVOKED`
-- `SESSION_NOT_FOUND`
-- `SESSION_ACCESS_FORBIDDEN`
-- `SESSION_JOIN_CODE_INVALID`
-- `CHANNEL_NOT_FOUND`
-- `CHANNEL_ACCESS_FORBIDDEN`
-- `INVALID_MESSAGE_PAYLOAD`
-- `MESSAGE_NOT_FOUND`
-- `CHARACTER_NOT_FOUND`
-- `CHARACTER_ACCESS_FORBIDDEN`
-- `INVALID_CHARACTER_PAYLOAD`
-- `INVALID_CHARACTER_PATCH_PAYLOAD`
-
-## 3. Auth
-
-### 3.1. POST `/api/auth/register`
-
-Crée un utilisateur et renvoie les tokens.
+Crée un compte en état `pending`.
 
 Body:
+
+```json
+{
+  "firstName": "Mikael",
+  "lastName": "Fremaux",
+  "nickname": "IronmanLM",
+  "email": "ironmanlm@en-ligne.fr",
+  "password": "MotDePasseLong"
+}
+```
+
+Réponse `201`:
+
+```json
+{
+  "status": "pending_email_verification",
+  "message": "Account created. Verify your email, then wait for admin approval."
+}
+```
+
+### `POST /api/auth/resend-verification`
+
+Body: `{ "email": "user@example.com" }`
+
+### `POST /api/auth/verify-email`
+
+Body: `{ "token": "..." }`
+
+Réponse `200`:
+
+```json
+{
+  "status": "verified",
+  "approvalStatus": "pending"
+}
+```
+
+### `GET /api/auth/verify-email?token=...`
+
+Même effet que la version POST.
+
+### `POST /api/auth/login`
+
+Body minimal:
 
 ```json
 {
   "email": "user@example.com",
-  "password": "demo123",
-  "displayName": "Elias"
+  "password": "MotDePasse"
 }
 ```
 
-Réponse `201`:
+Cas standard `200`:
 
 ```json
 {
-  "token": "<accessToken>",
-  "refreshToken": "<refreshToken>",
+  "token": "...",
+  "refreshToken": "...",
   "user": {
-    "id": "user_x",
+    "id": "user-...",
+    "displayName": "Nick (Prenom Nom)",
     "email": "user@example.com",
-    "displayName": "Elias",
     "roles": ["player"],
-    "createdAt": "2026-03-08T23:00:00.000Z"
+    "isEmailVerified": true,
+    "approvalStatus": "approved",
+    "hasTotpEnabled": false,
+    "isProtectedRootAdmin": false,
+    "createdAt": "2026-03-09T00:00:00.000Z"
   }
 }
 ```
 
-### 3.2. POST `/api/auth/login`
+Cas 2FA requis `200`:
 
-Body:
+```json
+{
+  "requiresTwoFactor": true,
+  "challengeToken": "...",
+  "methods": ["totp"]
+}
+```
+
+Finalisation 2FA: renvoyer `POST /api/auth/login` avec:
 
 ```json
 {
   "email": "user@example.com",
-  "password": "demo123"
+  "password": "MotDePasse",
+  "challengeToken": "...",
+  "totpCode": "123456"
 }
 ```
 
-Réponse `200`: même format que `register`.
+### `POST /api/auth/refresh`
 
-### 3.3. POST `/api/auth/refresh`
+Body: `{ "refreshToken": "..." }`
+
+### `POST /api/auth/forgot-password`
+
+Body: `{ "email": "user@example.com" }`
+
+### `POST /api/auth/reset-password`
 
 Body:
 
 ```json
 {
-  "refreshToken": "<refreshToken>"
+  "token": "...",
+  "password": "NouveauMotDePasseLong"
 }
 ```
 
-Réponse `200`:
+## Auth privée (Bearer)
 
-```json
-{
-  "token": "<newAccessToken>",
-  "refreshToken": "<newRefreshToken>"
-}
-```
+### `GET /api/auth/me`
 
-### 3.4. GET `/api/auth/me`
+Retourne `user` courant.
 
-Auth requise. Retourne l'utilisateur courant.
+### `POST /api/auth/logout`
 
-Réponse `200`:
+Body optionnel: `{ "refreshToken": "..." }`
 
-```json
-{
-  "user": {
-    "id": "user_x",
-    "email": "user@example.com",
-    "displayName": "Elias",
-    "roles": ["player"],
-    "createdAt": "2026-03-08T23:00:00.000Z"
-  }
-}
-```
-
-### 3.5. GET `/api/auth/introspect`
-
-Auth requise. Endpoint de debug pour vérifier le token en cours.
-
-Réponse `200`:
-
-```json
-{
-  "valid": true,
-  "user": {
-    "id": "user_123",
-    "email": "user@example.com",
-    "displayName": "Elias"
-  },
-  "token": {
-    "exp": 1719931200,
-    "iat": 1719930000
-  }
-}
-```
-
-Si token invalide/expiré: `401` + erreur standard `UNAUTHENTICATED`.
-
-### 3.6. POST `/api/auth/logout`
-
-Auth requise. Révoque le token d'accès courant. Peut aussi révoquer un refresh token si fourni.
-
-Body optionnel:
-
-```json
-{
-  "refreshToken": "<refreshToken>"
-}
-```
-
-Réponse `204`.
-
-## 4. Sessions
-
-## 4.1. Modèle Session
-
-```json
-{
-  "id": "session-1",
-  "name": "Campagne SteamShadows du mardi",
-  "systemId": "steamshadows",
-  "ownerUserId": "user-gm-1",
-  "gmUserId": "user-gm-1",
-  "status": "active",
-  "description": "Session demo backend",
-  "invitationCode": "ABCD1234",
-  "createdAt": "2026-03-08T23:00:00.000Z",
-  "updatedAt": "2026-03-08T23:00:00.000Z",
-  "players": [
-    {
-      "userId": "user-player-1",
-      "characterId": "char_42",
-      "role": "player"
-    }
-  ]
-}
-```
-
-### 4.2. GET `/api/sessions`
-
-Liste les sessions accessibles.
-
-Query optionnelle:
-
-- `role=gm|player|observer`
-- `status=draft|active|finished|archived`
-
-Réponse `200`:
-
-```json
-{
-  "items": []
-}
-```
-
-### 4.3. POST `/api/sessions`
+### `POST /api/auth/change-password`
 
 Body:
 
 ```json
 {
-  "name": "Nouvelle session",
-  "systemId": "steamshadows",
-  "description": "Optionnel"
+  "currentPassword": "...",
+  "newPassword": "..."
 }
 ```
 
-Réponse `201`:
-
-```json
-{
-  "session": {}
-}
-```
-
-### 4.4. GET `/api/sessions/{sessionId}`
+### `POST /api/auth/totp/setup`
 
 Réponse `200`:
 
 ```json
 {
-  "session": {}
+  "secret": "BASE32SECRET",
+  "otpauthUrl": "otpauth://totp/...",
+  "recommended": true
 }
 ```
 
-Erreurs possibles:
+### `POST /api/auth/totp/enable`
 
-- `404 SESSION_NOT_FOUND`
-- `403 SESSION_ACCESS_FORBIDDEN`
+Body: `{ "code": "123456" }`
 
-### 4.5. POST `/api/sessions/join`
+### `POST /api/auth/totp/disable`
+
+Body: `{ "code": "123456" }`
+
+## Admin
+
+### `GET /api/admin/users/pending`
+
+Liste uniquement les comptes `pending` dont email déjà validé.
+
+### `POST /api/admin/users/:userId/approve`
 
 Body:
 
 ```json
 {
-  "code": "ABCD1234"
+  "roles": ["player"]
 }
 ```
 
-Réponse `200`:
+Rôles permis: `player`, `gm`, `admin`.
 
-```json
-{
-  "session": {}
-}
-```
+Règles:
 
-Erreurs possibles:
+- email doit être validé avant approbation,
+- compte root admin protégé non modifiable (`ROOT_ADMIN_PROTECTED`).
 
-- `400 SESSION_JOIN_CODE_INVALID`
-- `403 SESSION_JOIN_FORBIDDEN`
+## Sessions / Systems / Sync
 
-### 4.6. PUT `/api/sessions/{sessionId}/me`
+Toujours disponibles comme dans le MVP existant:
 
-Met à jour le `characterId` du `currentUser` dans `players`.
-
-Body:
-
-```json
-{
-  "characterId": "char_42"
-}
-```
-
-Réponse `200`:
-
-```json
-{
-  "session": {}
-}
-```
-
-### 4.7. POST `/api/sessions/{sessionId}/leave`
-
-Réponse `204`.
-
-Règle MVP: le owner/gm ne peut pas quitter (`SESSION_LEAVE_FORBIDDEN`).
-
-### 4.8. PATCH `/api/sessions/{sessionId}`
-
-Réservé GM/owner.
-
-Body partiel possible:
-
-```json
-{
-  "name": "Nouveau nom",
-  "status": "active",
-  "description": "Optionnel"
-}
-```
-
-Réponse `200`:
-
-```json
-{
-  "session": {}
-}
-```
-
-### 4.9. DELETE `/api/sessions/{sessionId}`
-
-Réservé GM/owner.
-
-Réponse `204`.
-
-## 5. Channels et messages
-
-### 5.1. GET `/api/sessions/{sessionId}/channels`
-
-Renvoie les channels visibles par l'utilisateur.
-
-Réponse `200`:
-
-```json
-{
-  "items": []
-}
-```
-
-### 5.2. Modèle Message
-
-```json
-{
-  "id": "msg_123",
-  "sessionId": "session-1",
-  "channelId": "session-1-channel-global",
-  "channelType": "global",
-  "fromUserId": "user-player-1",
-  "toUserIds": ["user-gm-1"],
-  "groupId": "session-1-channel-group-a",
-  "content": "Texte du message",
-  "kind": "text",
-  "isPrivateToGM": false,
-  "systemType": "turn",
-  "createdAt": "2026-03-08T23:00:00.000Z",
-  "roll": {
-    "label": "Jet d'Athletisme",
-    "formula": "1d20+5",
-    "dice": [{ "faces": 20, "value": 12 }],
-    "modifier": 5,
-    "total": 17,
-    "isSuccess": true,
-    "target": 15
-  }
-}
-```
-
-Types supportés:
-
-- `channelType`: `global | group | direct | system`
-- `kind`: `text | roll | document | mixed`
-- `systemType`: `turn | round | combat_start | combat_end`
-
-### 5.3. GET `/api/sessions/{sessionId}/messages`
-
-Query optionnelles:
-
-- `channelId` (si absent, canal global)
-- `before` (date ISO)
-- `after` (date ISO)
-- `limit` (défaut 50, max 200)
-
-Réponse `200`:
-
-```json
-{
-  "items": [],
-  "nextCursor": "2026-03-08T23:00:00.000Z"
-}
-```
-
-Filtrage de visibilité (MVP):
-
-- `global`: tous les membres
-- `system`: tous les membres
-- `group`: membres du channel
-- `direct`: auteur + `toUserIds` + MJ
-- `isPrivateToGM = true`: MJ et auteur uniquement
-
-### 5.4. POST `/api/sessions/{sessionId}/messages`
-
-Body:
-
-```json
-{
-  "channelId": "session-1-channel-global",
-  "channelType": "global",
-  "toUserIds": ["user-player-2"],
-  "groupId": "session-1-channel-group-a",
-  "content": "texte",
-  "kind": "text",
-  "isPrivateToGM": false,
-  "systemType": "turn",
-  "roll": {
-    "label": "Jet d'Athletisme",
-    "formula": "1d20+5",
-    "total": 17
-  }
-}
-```
-
-Règles MVP:
-
-- `fromUserId` vient du token, jamais du client
-- `channelType=system` réservé au GM, forcé sur canal global
-- `kind=roll` accepte `roll` côté client (stocké tel quel)
-- `isPrivateToGM=true` force l'ajout du `gmUserId` dans `toUserIds`
-
-Réponse `201`:
-
-```json
-{
-  "message": {}
-}
-```
-
-### 5.5. DELETE `/api/sessions/{sessionId}/messages/{messageId}`
-
-Autorisé si:
-
-- GM de session
-- ou auteur du message
-
-Réponse `204`.
-
-## 6. Characters
-
-### 6.1. Modèle Character
-
-```json
-{
-  "id": "char_42",
-  "userId": "user-player-1",
-  "systemId": "steamshadows",
-  "name": "Elias Crow",
-  "portraitUrl": "https://...",
-  "createdAt": "2026-03-08T23:00:00.000Z",
-  "updatedAt": "2026-03-08T23:00:00.000Z",
-  "data": {}
-}
-```
-
-### 6.2. GET `/api/characters`
-
-Query optionnelle: `systemId=steamshadows`
-
-Réponse `200`:
-
-```json
-{
-  "items": []
-}
-```
-
-### 6.3. POST `/api/characters`
-
-Body:
-
-```json
-{
-  "systemId": "steamshadows",
-  "name": "Elias Crow",
-  "portraitUrl": "https://...",
-  "data": {}
-}
-```
-
-Réponse `201`:
-
-```json
-{
-  "character": {}
-}
-```
-
-### 6.4. GET `/api/characters/{characterId}`
-
-Réponse `200`:
-
-```json
-{
-  "character": {}
-}
-```
-
-### 6.5. PATCH `/api/characters/{characterId}`
-
-Body partiel:
-
-```json
-{
-  "name": "Nouveau nom",
-  "portraitUrl": "https://...",
-  "data": {}
-}
-```
-
-Réponse `200`:
-
-```json
-{
-  "character": {}
-}
-```
-
-### 6.6. DELETE `/api/characters/{characterId}`
-
-Réponse `204`.
-
-## 7. Character sheet view (session scope)
-
-### 7.1. Modèle CharacterSheetView
-
-```json
-{
-  "id": "char_42",
-  "name": "Elias Crow",
-  "portraitUrl": "https://...",
-  "groups": [
-    { "id": "valeurs_secondaires", "label": "Valeurs secondaires", "layout": "grid" }
-  ],
-  "fields": [
-    {
-      "id": "pv",
-      "label": "Points de vie",
-      "type": "resource",
-      "value": 18,
-      "max": 24,
-      "groupId": "valeurs_secondaires",
-      "isPrimary": true
-    }
-  ],
-  "actions": [
-    {
-      "id": "attaque_corps_a_corps",
-      "label": "Attaque CaC",
-      "description": "Jet d'attaque au corps a corps",
-      "rollFormula": "1d20+5"
-    }
-  ]
-}
-```
-
-### 7.2. GET `/api/sessions/{sessionId}/characters/{characterId}/sheet`
-
-Réponse `200`:
-
-```json
-{
-  "sheet": {}
-}
-```
-
-### 7.3. PATCH `/api/sessions/{sessionId}/characters/{characterId}`
-
-Patch brut (`dataPatch`) réservé GM.
-
-Body:
-
-```json
-{
-  "dataPatch": {
-    "secondary.pv.current": 16,
-    "secondary.equilibre.current": 7
-  }
-}
-```
-
-Réponse `200`:
-
-```json
-{
-  "sheet": {}
-}
-```
-
-### 7.4. PATCH `/api/sessions/{sessionId}/characters/{characterId}/sheet`
-
-Patch orienté fields.
-
-Body:
-
-```json
-{
-  "fields": [
-    { "id": "pv", "value": 16 },
-    { "id": "equilibre", "value": 7 }
-  ]
-}
-```
-
-Réponse `200`:
-
-```json
-{
-  "sheet": {}
-}
-```
-
-Règles MVP SteamShadows:
-
-- GM: peut modifier tous les champs mappés
-- Player: peut modifier `pv`, `equilibre`, `fortune` uniquement
-
-## 8. WebSocket
-
-- URL: `ws://localhost:4000/ws/sessions/{sessionId}`
-- Auth: `?token=<accessToken>` ou header `Authorization: Bearer <accessToken>`
-
-À la connexion valide:
-
-```json
-{
-  "type": "ws.connected",
-  "payload": {
-    "sessionId": "session-1",
-    "userId": "user-player-1"
-  }
-}
-```
-
-Événement diffusé à la création d'un message:
-
-```json
-{
-  "type": "chat.message.created",
-  "payload": {
-    "message": {}
-  }
-}
-```
-
-Le serveur n'envoie l'event qu'aux clients qui ont le droit de voir le message.
-
-## 9. Notes importantes pour contributeurs
-
-- Backend 100% en mémoire (`backend/src/data/store.js`), reset à chaque restart.
-- Pas de migration DB ni persistance dans ce MVP.
-- Contrats API décrits ici doivent rester alignés avec:
-  - `backend/src/routes/*.js`
-  - `backend/src/middleware/auth.js`
-  - `backend/src/utils/errors.js`
-- Toute nouvelle route doit utiliser le format d'erreur standard.
-
-## 10. Systeme de jeu visuel (rules program)
-
-Cette section couvre la programmation visuelle type Scratch pour:
-
-- calcul automatique de stats secondaires
-- définition de jets de dés paramétrables
-
-### 10.1. Modèle RulesProgramBlock
-
-`GameSystem` accepte désormais `rulesProgram`:
-
-```json
-{
-  "id": "sys-dnd5e-like",
-  "name": "SteamShadows Core",
-  "version": "0.1.0",
-  "ownerUserId": "user-gm-1",
-  "visibility": "public",
-  "rulesProgram": [
-    {
-      "id": "rule-defense",
-      "type": "set_secondary_stat",
-      "label": "Defense",
-      "targetFieldId": "defense",
-      "sourceFieldIds": ["agility", "fortitude"],
-      "operation": "sum",
-      "constantModifier": 1,
-      "rounding": "round"
-    },
-    {
-      "id": "rule-roll-attack",
-      "type": "define_roll",
-      "actionId": "attack_roll",
-      "label": "Jet d attaque",
-      "description": "Action standard",
-      "diceCount": 1,
-      "diceSides": 20,
-      "modifierFieldId": "defense",
-      "flatModifier": 0
-    }
-  ],
-  "referenceSheets": [
-    {
-      "id": "template-pj",
-      "name": "Template PJ",
-      "groups": [],
-      "fields": [],
-      "actions": []
-    }
-  ]
-}
-```
-
-Valeurs autorisées:
-
-- `operation`: `sum | subtract | multiply | average`
-- `rounding`: `none | floor | ceil | round`
-
-### 10.2. GET `/api/systems`
-
-Liste des systèmes accessibles pour l'utilisateur courant.
-
-Query optionnelles:
-
-- `owned=true` (retourne uniquement les systèmes du currentUser)
-- `visibility=public|private`
-
-Réponse `200`:
-
-```json
-{
-  "items": []
-}
-```
-
-### 10.3. GET `/api/systems/{systemId}`
-
-Retourne un système complet avec `rulesProgram`.
-
-Réponse `200`:
-
-```json
-{
-  "system": {}
-}
-```
-
-Erreurs:
-
-- `404 SYSTEM_NOT_FOUND`
-- `403 SYSTEM_ACCESS_FORBIDDEN`
-
-### 10.4. POST `/api/systems`
-
-Crée un système.
-
-Body:
-
-```json
-{
-  "name": "Mon systeme maison",
-  "version": "0.1.0",
-  "visibility": "private",
-  "tags": ["custom"],
-  "rulesProgram": [],
-  "referenceSheets": []
-}
-```
-
-Réponse `201`:
-
-```json
-{
-  "system": {}
-}
-```
-
-### 10.5. PATCH `/api/systems/{systemId}`
-
-Met à jour les métadonnées (`name`, `version`, `tags`, `visibility`) et/ou `rulesProgram` et/ou `referenceSheets`.
-
-Body:
-
-```json
-{
-  "rulesProgram": [],
-  "referenceSheets": []
-}
-```
-
-Réponse `200`:
-
-```json
-{
-  "system": {}
-}
-```
-
-### 10.6. PATCH `/api/systems/{systemId}/rules-program`
-
-Endpoint spécialisé pour remplacer le programme de blocs visuels.
-
-Body:
-
-```json
-{
-  "rulesProgram": []
-}
-```
-
-Réponse `200`:
-
-```json
-{
-  "system": {}
-}
-```
-
-Erreurs:
-
-- `400 INVALID_SYSTEM_RULES_PROGRAM`
-- `404 SYSTEM_NOT_FOUND`
-
-### 10.7. Permissions d'edition
-
-- Lecture:
-  - tous les systemes `visibility=public`
-  - les systemes prives du proprietaire
-  - tous les systemes pour un `admin`
-- Edition (`PATCH /api/systems/*`):
-  - proprietaire du systeme (`ownerUserId`)
-  - ou `admin`
-
-Erreur standard si non autorise:
-
-- `403 SYSTEM_EDIT_FORBIDDEN`
-
-### 10.8. Fiches de reference integrees au systeme
-
-Un systeme embarque `referenceSheets` (fiches modele) utilisees en session pour creer les fiches de PJ/PNJ.
-
-Exemple partiel:
-
-```json
-{
-  "system": {
-    "id": "sys_x",
-    "ownerUserId": "user-gm-1",
-    "visibility": "public",
-    "referenceSheets": [
-      {
-        "id": "template-1",
-        "name": "Template Aventurier",
-        "groups": [],
-        "fields": [],
-        "actions": []
-      }
-    ]
-  }
-}
-```
-
-Creation d'une fiche depuis un template (scope session):
-
+- `GET /api/sessions`
+- `GET /api/sessions/{id}`
+- `PATCH /api/sessions/{id}`
+- `GET /api/systems`
+- `GET /api/systems/{id}`
+- `POST /api/systems`
+- `PATCH /api/systems/{id}`
+- `POST /api/systems/{id}/duplicate`
 - `POST /api/sessions/{sessionId}/characters/from-template`
+- `POST /api/sync/actions`
 
-Body:
+## Codes d'erreur notables
 
-```json
-{
-  "systemId": "sys_x",
-  "templateId": "template-1",
-  "name": "Aria Volt"
-}
-```
-
-Reponse `201`:
-
-```json
-{
-  "character": {}
-}
-```
-
-### 10.9. POST `/api/systems/{systemId}/duplicate`
-
-Duplique un système accessible pour l'utilisateur courant.
-
-Body optionnel:
-
-```json
-{
-  "name": "SteamShadows Core (copie)"
-}
-```
-
-Réponse `201`:
-
-```json
-{
-  "system": {}
-}
-```
-
-Erreurs:
-
-- `404 SYSTEM_NOT_FOUND`
-- `403 SYSTEM_ACCESS_FORBIDDEN`
+- `INVALID_REGISTRATION_PAYLOAD`
+- `EMAIL_ALREADY_REGISTERED`
+- `WEAK_PASSWORD`
+- `INVALID_CREDENTIALS`
+- `EMAIL_NOT_VERIFIED`
+- `ACCOUNT_PENDING_APPROVAL`
+- `ACCOUNT_LOCKED`
+- `INVALID_2FA_CHALLENGE`
+- `INVALID_2FA_CODE`
+- `INVALID_VERIFICATION_TOKEN`
+- `EXPIRED_VERIFICATION_TOKEN`
+- `INVALID_RESET_TOKEN`
+- `EXPIRED_RESET_TOKEN`
+- `ROOT_ADMIN_PROTECTED`

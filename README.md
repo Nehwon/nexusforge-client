@@ -135,15 +135,12 @@ Voir le fichier [`LICENSE`](LICENSE) pour plus de détails.
 
 ## Déploiement frontend connecté backend
 
-Le frontend peut fonctionner:
-
-- en mode local/mock (sans backend),
-- ou connecté à un backend réel.
+Le frontend de production est prévu pour un backend réel.
 
 Variables Vite (voir `frontend/.env.example`):
 
-- `VITE_BACKEND_ENABLED=true`
 - `VITE_API_BASE_URL=https://api.votre-domaine.tld`
+- `VITE_BACKEND_ENABLED=true`
 - `VITE_SYNC_TRANSPORT=http`
 
 Build:
@@ -156,9 +153,16 @@ npm run build
 
 Puis déployer le contenu de `frontend/dist` sur l'hébergement web (ex: o2switch).
 
-### Backend MVP inclus dans ce repo
+### Backend inclus dans ce repo
 
-Un backend Express minimal est disponible dans `backend/`.
+Un backend Express est disponible dans `backend/` avec:
+
+- inscription + validation email,
+- approbation admin,
+- login JWT + refresh,
+- verrouillage progressif,
+- reset mot de passe,
+- 2FA TOTP.
 
 Lancement local:
 
