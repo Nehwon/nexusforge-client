@@ -204,6 +204,28 @@ Règles:
 - email doit être validé avant approbation,
 - compte root admin protégé non modifiable (`ROOT_ADMIN_PROTECTED`).
 
+### `GET /api/admin/systems/usage`
+
+Liste des systèmes avec métriques d'usage:
+
+- `usersUsingNow`
+- `activeSessionsCount`
+- `archivedSessionsCount`
+- `totalSessionsCount`
+- `lastUsedAt`
+
+### `DELETE /api/admin/systems/:systemId`
+
+Supprime un système (admin uniquement) et migre les parties liées vers un système de remplacement.
+
+Body:
+
+```json
+{
+  "replacementSystemId": "sys-steamshadows-reference"
+}
+```
+
 ## Sessions / Systems / Sync
 
 Toujours disponibles comme dans le MVP existant:

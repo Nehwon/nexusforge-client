@@ -36,6 +36,19 @@ export interface DefineRollBlock {
 
 export type RulesProgramBlock = SetSecondaryStatBlock | DefineRollBlock;
 export type GameSystemVisibility = 'public' | 'private';
+export type RulesGroupLayout = 'full' | 'half';
+
+export interface RulesPresentationGroup {
+  id: string;
+  name: string;
+  showTitle: boolean;
+  layout: RulesGroupLayout;
+  blockIds: string[];
+}
+
+export interface RulesPresentation {
+  groups: RulesPresentationGroup[];
+}
 
 export interface GameSystem {
   id: string;
@@ -47,6 +60,7 @@ export interface GameSystem {
   tags?: string[];
   rollDefinitions?: SystemRollDefinition[];
   rulesProgram?: RulesProgramBlock[];
+  rulesPresentation?: RulesPresentation;
   referenceSheets?: CharacterSheetView[];
   createdAt: string;
   updatedAt: string;

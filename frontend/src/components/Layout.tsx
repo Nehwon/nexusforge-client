@@ -5,12 +5,18 @@ import { useAuth } from '../hooks/useAuth';
 import { useI18n } from '../hooks/useI18n';
 import { listPendingUsersService } from '../services/authService';
 
+const THEME_STORAGE_KEY = 'nexusforge.theme';
+
 export default function Layout({ children }: PropsWithChildren) {
   const { currentUser, logout } = useAuth();
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const isAdmin = Boolean(currentUser?.roles.includes('admin'));
   const canUseRulesStudio = Boolean(currentUser && (currentUser.roles.includes('gm') || currentUser.roles.includes('admin')));
   const [pendingCount, setPendingCount] = useState(0);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === 'light' ? 'light' : 'dark';
+  });
 
   useEffect(() => {
     if (!isAdmin) {
@@ -43,6 +49,12 @@ export default function Layout({ children }: PropsWithChildren) {
       window.clearInterval(interval);
     };
   }, [isAdmin]);
+
+  useEffect(() => {
+    document.body.classList.toggle('theme-dark', theme === 'dark');
+    document.body.classList.toggle('theme-light', theme === 'light');
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   return (
     <>
@@ -96,6 +108,13 @@ export default function Layout({ children }: PropsWithChildren) {
                     {item.toUpperCase()}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="top-nav__locale">
+              <span>{t('nav.theme')}</span>
+              <select value={theme} onChange={(event) => setTheme(event.target.value === 'light' ? 'light' : 'dark')}>
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
               </select>
             </label>
             {currentUser ? (

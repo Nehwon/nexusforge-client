@@ -262,6 +262,53 @@ function canEditSystem(system, user) {
   return system.ownerUserId === user.id || user.roles.includes('admin');
 }
 
+function getSystemUsage(systemId) {
+  const linkedSessions = [...sessions.values()].filter((session) => session.systemId === systemId);
+  const activeSessions = linkedSessions.filter((session) => !session.archivedAt);
+  const archivedSessions = linkedSessions.filter((session) => Boolean(session.archivedAt));
+
+  const uniqueActiveUsers = new Set();
+  for (const session of activeSessions) {
+    for (const participant of session.participants || []) {
+      if (participant.userId) {
+        uniqueActiveUsers.add(participant.userId);
+      }
+    }
+    if (session.ownerUserId) {
+      uniqueActiveUsers.add(session.ownerUserId);
+    }
+    if (session.gmUserId) {
+      uniqueActiveUsers.add(session.gmUserId);
+    }
+    for (const gmUserId of session.gmUserIds || []) {
+      uniqueActiveUsers.add(gmUserId);
+    }
+  }
+
+  const timestamps = linkedSessions
+    .flatMap((session) => [session.updatedAt, session.createdAt, session.archivedAt])
+    .filter((value) => typeof value === 'string' && value);
+  const lastUsedAt =
+    timestamps.length > 0
+      ? new Date(
+          Math.max(
+            ...timestamps.map((value) => {
+              const parsed = new Date(value).getTime();
+              return Number.isFinite(parsed) ? parsed : 0;
+            })
+          )
+        ).toISOString()
+      : null;
+
+  return {
+    usersUsingNow: uniqueActiveUsers.size,
+    activeSessionsCount: activeSessions.length,
+    archivedSessionsCount: archivedSessions.length,
+    totalSessionsCount: linkedSessions.length,
+    lastUsedAt
+  };
+}
+
 function getSessionGmUserIds(session) {
   const fromArray = Array.isArray(session.gmUserIds) ? session.gmUserIds.filter((item) => typeof item === 'string') : [];
   if (fromArray.length > 0) {
@@ -958,6 +1005,46 @@ app.post('/api/admin/users/:userId/approve', requireAuth, requireAdmin, (req, re
   return res.status(200).json({ user: publicUser(user) });
 });
 
+app.get('/api/admin/systems/usage', requireAuth, requireAdmin, (req, res) => {
+  const items = [...systems.values()].map((system) => ({
+    ...clone(system),
+    usage: getSystemUsage(system.id)
+  }));
+  return res.status(200).json({ items });
+});
+
+app.delete('/api/admin/systems/:systemId', requireAuth, requireAdmin, (req, res) => {
+  const system = systems.get(req.params.systemId);
+  if (!system) {
+    return error(res, 404, 'SYSTEM_NOT_FOUND', 'System not found');
+  }
+
+  const replacementSystemId =
+    typeof req.body?.replacementSystemId === 'string' && req.body.replacementSystemId.trim()
+      ? req.body.replacementSystemId.trim()
+      : 'sys-steamshadows-reference';
+  if (!systems.has(replacementSystemId) || replacementSystemId === system.id) {
+    return error(res, 400, 'SYSTEM_DELETE_INVALID_REPLACEMENT', 'Valid replacementSystemId is required');
+  }
+
+  const relatedSessions = [...sessions.values()].filter((session) => session.systemId === system.id);
+  const now = nowIso();
+  for (const session of relatedSessions) {
+    sessions.set(session.id, {
+      ...session,
+      systemId: replacementSystemId,
+      updatedAt: now
+    });
+  }
+
+  systems.delete(system.id);
+  return res.status(200).json({
+    status: 'deleted',
+    replacementSystemId,
+    migratedSessionsCount: relatedSessions.length
+  });
+});
+
 app.get('/api/sessions', requireAuth, (req, res) => {
   const currentUser = req.currentUser;
   const includeArchived = String(req.query?.includeArchived || 'false') === 'true';
@@ -1167,12 +1254,14 @@ app.post('/api/systems', requireAuth, (req, res) => {
   const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : 'Nouveau systeme';
 
   let rulesProgram = [];
+  let rulesPresentation = undefined;
   let referenceSheets = [];
 
   if (typeof body.templateFromSystemId === 'string') {
     const source = systems.get(body.templateFromSystemId);
     if (source && canViewSystem(source, req.currentUser)) {
       rulesProgram = clone(source.rulesProgram || []);
+      rulesPresentation = source.rulesPresentation ? clone(source.rulesPresentation) : undefined;
       referenceSheets = clone(source.referenceSheets || []);
     }
   }
@@ -1186,6 +1275,11 @@ app.post('/api/systems', requireAuth, (req, res) => {
     visibility: body.visibility === 'public' ? 'public' : 'private',
     tags: Array.isArray(body.tags) ? body.tags : ['custom'],
     rulesProgram: Array.isArray(body.rulesProgram) ? body.rulesProgram : rulesProgram,
+    ...(body.rulesPresentation && typeof body.rulesPresentation === 'object'
+      ? { rulesPresentation: body.rulesPresentation }
+      : rulesPresentation
+      ? { rulesPresentation }
+      : {}),
     referenceSheets: Array.isArray(body.referenceSheets) ? body.referenceSheets : referenceSheets,
     createdAt: nowIso(),
     updatedAt: nowIso()
@@ -1213,6 +1307,7 @@ app.patch('/api/systems/:systemId', requireAuth, (req, res) => {
     ...(typeof body.visibility === 'string' ? { visibility: body.visibility === 'private' ? 'private' : 'public' } : {}),
     ...(Array.isArray(body.tags) ? { tags: body.tags } : {}),
     ...(Array.isArray(body.rulesProgram) ? { rulesProgram: body.rulesProgram } : {}),
+    ...(body.rulesPresentation && typeof body.rulesPresentation === 'object' ? { rulesPresentation: body.rulesPresentation } : {}),
     ...(Array.isArray(body.referenceSheets) ? { referenceSheets: body.referenceSheets } : {}),
     updatedAt: nowIso()
   };

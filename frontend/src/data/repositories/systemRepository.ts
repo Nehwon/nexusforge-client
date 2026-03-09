@@ -53,6 +53,10 @@ function mapApiSystem(raw: Record<string, unknown>): GameSystem {
     tags: Array.isArray(raw.tags) ? raw.tags.filter((item): item is string => typeof item === 'string') : [],
     rollDefinitions: Array.isArray(raw.rollDefinitions) ? (raw.rollDefinitions as GameSystem['rollDefinitions']) : [],
     rulesProgram: Array.isArray(raw.rulesProgram) ? (raw.rulesProgram as GameSystem['rulesProgram']) : [],
+    rulesPresentation:
+      raw.rulesPresentation && typeof raw.rulesPresentation === 'object'
+        ? (raw.rulesPresentation as GameSystem['rulesPresentation'])
+        : undefined,
     referenceSheets: Array.isArray(raw.referenceSheets) ? (raw.referenceSheets as GameSystem['referenceSheets']) : [],
     createdAt: String(raw.createdAt ?? new Date().toISOString()),
     updatedAt: String(raw.updatedAt ?? new Date().toISOString())
@@ -253,6 +257,7 @@ export const systemRepository = {
             visibility: system.visibility,
             tags: system.tags,
             rulesProgram: system.rulesProgram,
+            rulesPresentation: system.rulesPresentation,
             referenceSheets: system.referenceSheets
           }
         });
@@ -279,5 +284,53 @@ export const systemRepository = {
       actionType: 'update',
       payload: nextSystem as unknown as Record<string, unknown>
     });
+  },
+
+  async listUsageForAdmin(): Promise<
+    Array<
+      GameSystem & {
+        usage: {
+          usersUsingNow: number;
+          activeSessionsCount: number;
+          archivedSessionsCount: number;
+          totalSessionsCount: number;
+          lastUsedAt: string | null;
+        };
+      }
+    >
+  > {
+    const payload = await requestJson<{ items: Array<Record<string, unknown> & { usage?: Record<string, unknown> }> }>({
+      path: '/api/admin/systems/usage',
+      method: 'GET',
+      withAuth: true
+    });
+
+    return payload.items.map((raw) => {
+      const mapped = mapApiSystem(raw);
+      const usageRaw = raw.usage ?? {};
+      return {
+        ...mapped,
+        usage: {
+          usersUsingNow: Number(usageRaw.usersUsingNow ?? 0),
+          activeSessionsCount: Number(usageRaw.activeSessionsCount ?? 0),
+          archivedSessionsCount: Number(usageRaw.archivedSessionsCount ?? 0),
+          totalSessionsCount: Number(usageRaw.totalSessionsCount ?? 0),
+          lastUsedAt: typeof usageRaw.lastUsedAt === 'string' ? usageRaw.lastUsedAt : null
+        }
+      };
+    });
+  },
+
+  async deleteAsAdmin(params: { systemId: string; replacementSystemId: string }): Promise<{ migratedSessionsCount: number }> {
+    const payload = await requestJson<{ migratedSessionsCount?: number }>({
+      path: `/api/admin/systems/${params.systemId}`,
+      method: 'DELETE',
+      withAuth: true,
+      body: { replacementSystemId: params.replacementSystemId }
+    });
+    await db.systems.delete(params.systemId);
+    return {
+      migratedSessionsCount: Number(payload.migratedSessionsCount ?? 0)
+    };
   }
 };

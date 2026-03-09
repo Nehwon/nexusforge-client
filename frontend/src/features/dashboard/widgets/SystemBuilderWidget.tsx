@@ -4,7 +4,7 @@ import { applyRulesProgramToSheet } from '../../../services/systemRulesEngine';
 import { Character } from '../../../types/character';
 import { CharacterSheetView, SheetField, SheetGroup } from '../../../types/characterSheet';
 import { Session } from '../../../types/session';
-import { DefineRollBlock, GameSystem, RulesProgramBlock, SetSecondaryStatBlock } from '../../../types/system';
+import { DefineRollBlock, GameSystem, RulesPresentationGroup, RulesProgramBlock, SetSecondaryStatBlock } from '../../../types/system';
 import { User } from '../../../types/user';
 import { canUserEditSystem } from '../../../data/repositories/systemRepository';
 
@@ -44,6 +44,56 @@ function reorderBlocks(blocks: RulesProgramBlock[], sourceId: string, targetId: 
 
   next.splice(targetIndex, 0, moved);
   return next;
+}
+
+function moveBlockByOffset(blocks: RulesProgramBlock[], blockId: string, offset: -1 | 1): RulesProgramBlock[] {
+  const index = blocks.findIndex((block) => block.id === blockId);
+  if (index === -1) {
+    return blocks;
+  }
+  const target = index + offset;
+  if (target < 0 || target >= blocks.length) {
+    return blocks;
+  }
+
+  const next = [...blocks];
+  const [moved] = next.splice(index, 1);
+  if (!moved) {
+    return blocks;
+  }
+  next.splice(target, 0, moved);
+  return next;
+}
+
+function makeDefaultRulesGroup(blockIds: string[]): RulesPresentationGroup {
+  return {
+    id: makeId('rules-group'),
+    name: 'Groupe principal',
+    showTitle: true,
+    layout: 'full',
+    blockIds
+  };
+}
+
+function normalizeRulesGroups(groups: RulesPresentationGroup[] | undefined, blocks: RulesProgramBlock[]): RulesPresentationGroup[] {
+  const blockIds = blocks.map((block) => block.id);
+  if (!groups || groups.length === 0) {
+    return [makeDefaultRulesGroup(blockIds)];
+  }
+
+  const knownIds = new Set(blockIds);
+  const nextGroups = groups.map((group) => ({
+    ...group,
+    blockIds: (group.blockIds || []).filter((id) => knownIds.has(id))
+  }));
+
+  const assigned = new Set(nextGroups.flatMap((group) => group.blockIds));
+  const unassigned = blockIds.filter((id) => !assigned.has(id));
+  if (unassigned.length > 0) {
+    nextGroups[0].blockIds = [...nextGroups[0].blockIds, ...unassigned];
+  }
+
+  return nextGroups;
 }
 
 function reorderFields(fields: SheetField[], sourceId: string, targetId: string): SheetField[] {
@@ -260,6 +310,7 @@ function renderPreviewField(field: SheetField) {
 export default function SystemBuilderWidget({ currentUser, currentSession, role }: SystemBuilderWidgetProps) {
   const [system, setSystem] = useState<GameSystem | null>(null);
   const [draftProgram, setDraftProgram] = useState<RulesProgramBlock[]>([]);
+  const [draftRulesGroups, setDraftRulesGroups] = useState<RulesPresentationGroup[]>([]);
   const [draftReferenceSheets, setDraftReferenceSheets] = useState<CharacterSheetView[]>([]);
   const [selectedReferenceSheetId, setSelectedReferenceSheetId] = useState<string | null>(null);
   const [referenceSheetNameDraft, setReferenceSheetNameDraft] = useState('');
@@ -296,7 +347,9 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
 
         const nextSystem = localSystem ?? buildDefaultSystem(currentSession.systemId);
         setSystem(nextSystem);
-        setDraftProgram(nextSystem.rulesProgram ?? []);
+        const nextProgram = nextSystem.rulesProgram ?? [];
+        setDraftProgram(nextProgram);
+        setDraftRulesGroups(normalizeRulesGroups(nextSystem.rulesPresentation?.groups, nextProgram));
         const nextReferenceSheets = nextSystem.referenceSheets ?? [];
         setDraftReferenceSheets(nextReferenceSheets);
         setSelectedReferenceSheetId((current) => current ?? nextReferenceSheets[0]?.id ?? null);
@@ -383,13 +436,137 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
   };
 
   const addBlock = (type: 'set_secondary_stat' | 'define_roll') => {
-    if (type === 'set_secondary_stat') {
-      setDraftProgram((previous) => [...previous, createDefaultSecondaryBlock(firstFieldId)]);
-      return;
-    }
-
-    setDraftProgram((previous) => [...previous, createDefaultRollBlock(firstFieldId)]);
+    const nextBlock = type === 'set_secondary_stat' ? createDefaultSecondaryBlock(firstFieldId) : createDefaultRollBlock(firstFieldId);
+    setDraftProgram((previous) => [...previous, nextBlock]);
+    setDraftRulesGroups((previous) => {
+      if (previous.length === 0) {
+        return [makeDefaultRulesGroup([nextBlock.id])];
+      }
+      return previous.map((group, index) => (index === 0 ? { ...group, blockIds: [...group.blockIds, nextBlock.id] } : group));
+    });
   };
+
+  useEffect(() => {
+    setDraftRulesGroups((previous) => normalizeRulesGroups(previous, draftProgram));
+  }, [draftProgram]);
+
+  const removeBlock = (blockId: string) => {
+    setDraftProgram((previous) => previous.filter((item) => item.id !== blockId));
+    setDraftRulesGroups((previous) =>
+      previous.map((group) => ({
+        ...group,
+        blockIds: group.blockIds.filter((id) => id !== blockId)
+      }))
+    );
+  };
+
+  const moveBlockInGroup = (groupId: string, blockId: string, offset: -1 | 1) => {
+    setDraftRulesGroups((previous) =>
+      previous.map((group) => {
+        if (group.id !== groupId) {
+          return group;
+        }
+        const index = group.blockIds.indexOf(blockId);
+        if (index === -1) {
+          return group;
+        }
+        const target = index + offset;
+        if (target < 0 || target >= group.blockIds.length) {
+          return group;
+        }
+        const nextBlockIds = [...group.blockIds];
+        const [moved] = nextBlockIds.splice(index, 1);
+        if (!moved) {
+          return group;
+        }
+        nextBlockIds.splice(target, 0, moved);
+        return {
+          ...group,
+          blockIds: nextBlockIds
+        };
+      })
+    );
+  };
+
+  const moveBlockToGroup = (blockId: string, targetGroupId: string) => {
+    setDraftRulesGroups((previous) => {
+      let extracted = false;
+      const without = previous.map((group) => {
+        const has = group.blockIds.includes(blockId);
+        if (!has) {
+          return group;
+        }
+        extracted = true;
+        return {
+          ...group,
+          blockIds: group.blockIds.filter((id) => id !== blockId)
+        };
+      });
+      if (!extracted) {
+        return previous;
+      }
+      return without.map((group) =>
+        group.id === targetGroupId
+          ? {
+              ...group,
+              blockIds: [...group.blockIds, blockId]
+            }
+          : group
+      );
+    });
+  };
+
+  const createRulesGroup = () => {
+    const next: RulesPresentationGroup = {
+      id: makeId('rules-group'),
+      name: `Groupe ${draftRulesGroups.length + 1}`,
+      showTitle: true,
+      layout: 'half',
+      blockIds: []
+    };
+    setDraftRulesGroups((previous) => [...previous, next]);
+  };
+
+  const deleteRulesGroup = (groupId: string) => {
+    setDraftRulesGroups((previous) => {
+      if (previous.length <= 1) {
+        return previous;
+      }
+      const source = previous.find((group) => group.id === groupId);
+      const target = previous.find((group) => group.id !== groupId);
+      if (!source || !target) {
+        return previous;
+      }
+      return previous
+        .filter((group) => group.id !== groupId)
+        .map((group) =>
+          group.id === target.id
+            ? {
+                ...group,
+                blockIds: [...group.blockIds, ...source.blockIds]
+              }
+            : group
+        );
+    });
+  };
+
+  const updateRulesGroup = (groupId: string, update: (group: RulesPresentationGroup) => RulesPresentationGroup) => {
+    setDraftRulesGroups((previous) => previous.map((group) => (group.id === groupId ? update(group) : group)));
+  };
+
+  const orderedBlocksById = useMemo(
+    () => draftProgram.reduce<Record<string, RulesProgramBlock>>((acc, block) => ({ ...acc, [block.id]: block }), {}),
+    [draftProgram]
+  );
+
+  const displayedGroups = useMemo(
+    () =>
+      draftRulesGroups.map((group) => ({
+        ...group,
+        blocks: group.blockIds.map((id) => orderedBlocksById[id]).filter((block): block is RulesProgramBlock => Boolean(block))
+      })),
+    [draftRulesGroups, orderedBlocksById]
+  );
 
   const handleSave = async () => {
     if (!system) {
@@ -404,6 +581,9 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
       const nextSystem: GameSystem = {
         ...system,
         rulesProgram: draftProgram,
+        rulesPresentation: {
+          groups: draftRulesGroups
+        },
         referenceSheets: draftReferenceSheets,
         updatedAt: new Date().toISOString()
       };
@@ -438,7 +618,8 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
   return (
     <div className="system-builder">
       <p style={{ marginTop: 0 }}>
-        Mode visuel type Scratch: ajoute des blocs, glisse-depose pour reordonner, puis sauvegarde.
+        Mode visuel type Scratch: ajoute des blocs, glisse-depose pour reordonner, puis sauvegarde. Si le drag&drop ne répond pas (mobile),
+        utilise les boutons Monter/Descendre.
       </p>
       {!canEdit ? (
         <p style={{ margin: 0, color: '#b42318' }}>
@@ -812,6 +993,9 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
         <button className="button secondary" type="button" onClick={() => addBlock('define_roll')}>
           + Bloc jet de de
         </button>
+        <button className="button secondary" type="button" onClick={createRulesGroup}>
+          + Groupe de presentation
+        </button>
         <button className="button" type="button" onClick={() => void handleSave()} disabled={isSaving}>
           {isSaving ? 'Sauvegarde...' : 'Sauvegarder les regles'}
         </button>
@@ -819,49 +1003,122 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
 
         {statusMessage ? <p style={{ margin: 0, color: '#067647' }}>{statusMessage}</p> : null}
 
-        {draftProgram.length === 0 ? (
-          <p style={{ margin: 0 }}>Aucun bloc. Ajoute un bloc pour definir les calculs et jets.</p>
-        ) : (
-          <div className="system-builder__list">
-          {draftProgram.map((block) => (
-            <article
-              key={block.id}
-              className={`system-block ${dropTargetBlockId === block.id ? 'is-drop-target' : ''}`}
-              draggable
-              onDragStart={() => {
-                setDraggedBlockId(block.id);
-              }}
-              onDragEnd={() => {
-                setDraggedBlockId(null);
-                setDropTargetBlockId(null);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                if (draggedBlockId && draggedBlockId !== block.id) {
-                  setDropTargetBlockId(block.id);
-                }
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                if (!draggedBlockId || draggedBlockId === block.id) {
-                  return;
-                }
-                setDraftProgram((previous) => reorderBlocks(previous, draggedBlockId, block.id));
-                setDraggedBlockId(null);
-                setDropTargetBlockId(null);
-              }}
-            >
-              <header className="system-block__header">
-                <strong>{block.type === 'set_secondary_stat' ? 'Bloc stat secondaire' : 'Bloc jet de de'}</strong>
+        <section className="system-builder__groups-panel">
+          <strong>Presentation des groupes</strong>
+          <div className="system-builder__groups-editor">
+            {draftRulesGroups.map((group) => (
+              <article key={group.id} className="system-builder__group-editor-item">
+                <input
+                  type="text"
+                  value={group.name}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    updateRulesGroup(group.id, (current) => ({
+                      ...current,
+                      name: value
+                    }));
+                  }}
+                />
+                <select
+                  value={group.layout}
+                  onChange={(event) => {
+                    const value = event.target.value as RulesPresentationGroup['layout'];
+                    updateRulesGroup(group.id, (current) => ({
+                      ...current,
+                      layout: value
+                    }));
+                  }}
+                >
+                  <option value="half">Cote a cote</option>
+                  <option value="full">Pleine largeur</option>
+                </select>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={group.showTitle}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      updateRulesGroup(group.id, (current) => ({
+                        ...current,
+                        showTitle: checked
+                      }));
+                    }}
+                  />
+                  Titre visible
+                </label>
                 <button
                   className="button secondary"
                   type="button"
                   onClick={() => {
-                    setDraftProgram((previous) => previous.filter((item) => item.id !== block.id));
+                    deleteRulesGroup(group.id);
                   }}
+                  disabled={draftRulesGroups.length <= 1}
                 >
-                  Supprimer
+                  Supprimer groupe
                 </button>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        {draftProgram.length === 0 ? (
+          <p style={{ margin: 0 }}>Aucun bloc. Ajoute un bloc pour definir les calculs et jets.</p>
+        ) : (
+          <div className="system-builder__list system-builder__list--grouped">
+          {displayedGroups.map((group) => (
+            <section
+              key={group.id}
+              className={`system-builder__rules-group ${group.layout === 'full' ? 'is-full' : 'is-half'}`}
+            >
+              {group.showTitle ? <h4 style={{ marginTop: 0, marginBottom: '0.6rem' }}>{group.name || 'Groupe sans titre'}</h4> : null}
+              {group.blocks.map((block) => (
+            <article
+              key={block.id}
+              className="system-block"
+            >
+              <header className="system-block__header">
+                <strong>{block.type === 'set_secondary_stat' ? 'Bloc stat secondaire' : 'Bloc jet de de'}</strong>
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  <select
+                    value={group.id}
+                    onChange={(event) => {
+                      moveBlockToGroup(block.id, event.target.value);
+                    }}
+                  >
+                    {draftRulesGroups.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name || 'Groupe'}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={() => {
+                      moveBlockInGroup(group.id, block.id, -1);
+                    }}
+                  >
+                    Monter
+                  </button>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={() => {
+                      moveBlockInGroup(group.id, block.id, 1);
+                    }}
+                  >
+                    Descendre
+                  </button>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={() => {
+                      removeBlock(block.id);
+                    }}
+                  >
+                    Supprimer
+                  </button>
+                </div>
               </header>
 
               {block.type === 'set_secondary_stat' ? (
@@ -1196,6 +1453,8 @@ export default function SystemBuilderWidget({ currentUser, currentSession, role 
                 </div>
               )}
             </article>
+              ))}
+            </section>
           ))}
           </div>
         )}
