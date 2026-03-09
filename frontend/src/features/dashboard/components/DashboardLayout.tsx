@@ -112,13 +112,14 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
 
     async function loadProfiles() {
       try {
-        const localProfiles = await dashboardProfileRepository.listForUserRole(currentUser.id, role);
+        const localProfiles = await dashboardProfileRepository.listForUserRole(currentUser.id, role, currentSession.id);
 
         let ensuredProfiles = localProfiles;
         if (ensuredProfiles.length === 0) {
           const created = await dashboardProfileRepository.createProfile({
             userId: currentUser.id,
             role,
+            sessionId: currentSession.id,
             name: role === 'gm' ? 'Interface MJ par defaut' : 'Interface Joueur par defaut',
             widgetIds: availableWidgetIds,
             isFavorite: true
@@ -162,7 +163,7 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
     return () => {
       isMounted = false;
     };
-  }, [availableWidgetIds, currentUser.id, role]);
+  }, [availableWidgetIds, currentSession.id, currentUser.id, role]);
 
   const selectedProfile = useMemo(
     () => profiles.find((profile) => profile.id === selectedProfileId) ?? null,
@@ -255,6 +256,7 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
       const created = await dashboardProfileRepository.createProfile({
         userId: currentUser.id,
         role,
+        sessionId: currentSession.id,
         name: `${role === 'gm' ? 'Interface MJ' : 'Interface Joueur'} ${profiles.length + 1}`,
         widgetIds: availableWidgetIds,
         sourceProfile: source,

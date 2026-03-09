@@ -5,13 +5,13 @@ import { useAuth } from '../../../hooks/useAuth';
 import { Session } from '../../../types/session';
 import SessionHeader from '../components/SessionHeader';
 import SystemCatalogPanel from '../components/SystemCatalogPanel';
+import PartyAdminPanel from '../components/PartyAdminPanel';
 import SyncConflictsPanel from '../components/SyncConflictsPanel';
 import SyncStatusPanel from '../components/SyncStatusPanel';
 import DashboardLayout, { WidgetConfig } from '../../dashboard/components/DashboardLayout';
 import { sessionRepository } from '../../../data/repositories';
 
 const gmWidgets: WidgetConfig[] = [
-  { id: 'system-builder', type: 'system-builder', title: 'Systeme de jeu (Scratch)' },
   { id: 'initiative', type: 'initiative', title: 'Initiative & Combat' },
   { id: 'characters', type: 'character', title: 'Fiches' },
   { id: 'chat', type: 'chat', title: 'Chat & Messages' },
@@ -44,7 +44,7 @@ export default function SessionViewPage() {
         }
       } catch (error) {
         if (isMounted) {
-          setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger la session.');
+          setErrorMessage(error instanceof Error ? error.message : 'Impossible de charger la partie.');
         }
       } finally {
         if (isMounted) {
@@ -63,7 +63,7 @@ export default function SessionViewPage() {
   if (isLoading) {
     return (
       <Layout>
-        <section className="card">Chargement de la session...</section>
+        <section className="card">Chargement de la partie...</section>
       </Layout>
     );
   }
@@ -87,13 +87,17 @@ export default function SessionViewPage() {
   }
 
   const role: 'gm' | 'player' =
-    currentUser.id === session.gmUserId || currentUser.roles.includes('gm') || currentUser.roles.includes('admin')
+    currentUser.id === session.gmUserId ||
+    (session.gmUserIds || []).includes(currentUser.id) ||
+    currentUser.roles.includes('gm') ||
+    currentUser.roles.includes('admin')
       ? 'gm'
       : 'player';
 
   return (
     <Layout>
       <SessionHeader sessionName={session.name} sessionState={session.state} role={role} />
+      <PartyAdminPanel session={session} currentUser={currentUser} onSessionChange={(nextSession) => setSession(nextSession)} />
       <SystemCatalogPanel
         currentUser={currentUser}
         currentSession={session}

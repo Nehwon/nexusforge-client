@@ -8,6 +8,7 @@
 - Auth réelle backend (inscription, validation email, approbation admin, login JWT, reset password, 2FA TOTP).
 - Routes protégées + espace admin pour valider les comptes.
 - Sessions locales + binding du `systemId` de session.
+- Administration des parties: création, archivage/restauration, suppression définitive (owner/admin), propriétaire + multi-MJ.
 - Systèmes de jeu:
   - listing des systèmes disponibles pour l'utilisateur,
   - création,

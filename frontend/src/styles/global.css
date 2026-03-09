@@ -77,9 +77,36 @@ a:hover {
   gap: 0.55rem;
 }
 
+.top-nav__locale {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #475467;
+  font-size: 0.85rem;
+}
+
+.top-nav__locale select {
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 0.3rem 0.4rem;
+  background: #fff;
+}
+
 .top-nav__user {
   font-size: 0.86rem;
   color: #475467;
+}
+
+.admin-pending-banner {
+  border-top: 1px solid #d0d5dd;
+  background: #fff8e1;
+  padding: 0.45rem 1.5rem;
+  font-size: 0.9rem;
+}
+
+.admin-pending-banner a {
+  color: #9a3412;
+  font-weight: 600;
 }
 
 .card {
@@ -99,6 +126,13 @@ a:hover {
   padding: 0.6rem 0.75rem;
   border: 1px solid #d0d5dd;
   border-radius: 8px;
+}
+
+.form select {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
 }
 
 .button {

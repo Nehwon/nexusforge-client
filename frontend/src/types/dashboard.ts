@@ -5,6 +5,7 @@ export interface DashboardProfile {
   id: string;
   userId: string;
   role: DashboardRole;
+  sessionId?: string | null;
   name: string;
   isFavorite: boolean;
   widgetOrder: string[];

@@ -37,7 +37,10 @@ export interface Session {
   campaignId?: string | null;
   name: string;
   description?: string;
+  ownerUserId?: string;
   gmUserId: string;
+  gmUserIds?: string[];
+  archivedAt?: string | null;
   state: SessionState;
   settings?: SessionSettings;
   participants?: SessionParticipant[];

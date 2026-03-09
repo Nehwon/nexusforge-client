@@ -3,6 +3,7 @@ import { RouterProvider } from 'react-router-dom';
 import { router } from './router';
 import { AuthProvider } from './features/auth/store/authStore';
 import { runSyncCycle } from './services/syncService';
+import { I18nProvider } from './i18n/I18nProvider';
 
 export default function App() {
   useEffect(() => {
@@ -26,8 +27,10 @@ export default function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <RouterProvider router={router} />
-    </AuthProvider>
+    <I18nProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </I18nProvider>
   );
 }

@@ -16,7 +16,10 @@ function mapApiSession(raw: Record<string, unknown>): Session {
     systemId: String(raw.systemId ?? ''),
     name: String(raw.name ?? ''),
     description: typeof raw.description === 'string' ? raw.description : undefined,
+    ownerUserId: typeof raw.ownerUserId === 'string' ? raw.ownerUserId : undefined,
     gmUserId: String(raw.gmUserId ?? raw.ownerUserId ?? ''),
+    gmUserIds: Array.isArray(raw.gmUserIds) ? raw.gmUserIds.filter((item): item is string => typeof item === 'string') : undefined,
+    archivedAt: typeof raw.archivedAt === 'string' ? raw.archivedAt : raw.archivedAt === null ? null : undefined,
     state: normalizeSessionState(typeof raw.state === 'string' ? raw.state : typeof raw.status === 'string' ? raw.status : undefined),
     settings: (raw.settings as Session['settings']) ?? undefined,
     participants: (raw.players as Session['participants']) ?? (raw.participants as Session['participants']) ?? [],
@@ -27,12 +30,13 @@ function mapApiSession(raw: Record<string, unknown>): Session {
 }
 
 export const sessionRepository = {
-  async list(): Promise<Session[]> {
+  async list(params?: { includeArchived?: boolean }): Promise<Session[]> {
     await ensureDatabaseIsInitialized();
+    const includeArchived = Boolean(params?.includeArchived);
     if (isBackendEnabled()) {
       try {
         const payload = await requestJson<{ items?: Record<string, unknown>[] }>({
-          path: '/api/sessions',
+          path: includeArchived ? '/api/sessions?includeArchived=true' : '/api/sessions',
           method: 'GET',
           withAuth: true
         });
@@ -44,7 +48,11 @@ export const sessionRepository = {
         // fallback local cache
       }
     }
-    return db.sessions.orderBy('updatedAt').reverse().toArray();
+    const all = await db.sessions.orderBy('updatedAt').reverse().toArray();
+    if (includeArchived) {
+      return all;
+    }
+    return all.filter((session) => !session.archivedAt);
   },
 
   async getById(sessionId: string): Promise<Session | null> {
@@ -81,8 +89,11 @@ export const sessionRepository = {
             description: session.description,
             state: session.state,
             systemId: session.systemId,
+            ownerUserId: session.ownerUserId,
+            gmUserIds: session.gmUserIds,
             settings: session.settings,
-            participants: session.participants
+            participants: session.participants,
+            archivedAt: session.archivedAt ?? null
           }
         });
       } catch {
@@ -96,6 +107,126 @@ export const sessionRepository = {
       actionType: 'update',
       payload: { ...session }
     });
+  },
+
+  async create(params: {
+    name: string;
+    description?: string;
+    systemId: string;
+    ownerUserId: string;
+    settings?: Session['settings'];
+  }): Promise<Session> {
+    await ensureDatabaseIsInitialized();
+
+    if (isBackendEnabled()) {
+      try {
+        const payload = await requestJson<{ session?: Record<string, unknown> }>({
+          path: '/api/sessions',
+          method: 'POST',
+          withAuth: true,
+          body: {
+            name: params.name,
+            description: params.description,
+            systemId: params.systemId,
+            settings: params.settings
+          }
+        });
+        if (payload.session) {
+          const mapped = mapApiSession(payload.session);
+          await db.sessions.put(mapped);
+          return mapped;
+        }
+      } catch {
+        // fallback local creation
+      }
+    }
+
+    const now = new Date().toISOString();
+    const session: Session = {
+      id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: params.name.trim() || 'Nouvelle partie',
+      description: params.description,
+      systemId: params.systemId,
+      ownerUserId: params.ownerUserId,
+      gmUserId: params.ownerUserId,
+      state: 'planned',
+      settings: params.settings,
+      participants: [{ userId: params.ownerUserId, role: 'gm', isConnected: false }],
+      initiative: {
+        round: 0,
+        turnIndex: 0,
+        isInCombat: false,
+        entries: []
+      },
+      createdAt: now,
+      updatedAt: now
+    };
+
+    await db.sessions.put(session);
+    await localActionRepository.enqueue({
+      entityType: 'session',
+      entityId: session.id,
+      actionType: 'create',
+      payload: { ...session }
+    });
+
+    return session;
+  },
+
+  async remove(session: Session): Promise<void> {
+    await ensureDatabaseIsInitialized();
+
+    if (isBackendEnabled()) {
+      try {
+        await requestJson<void>({
+          path: `/api/sessions/${session.id}`,
+          method: 'DELETE',
+          withAuth: true
+        });
+      } catch {
+        // fallback local delete
+      }
+    }
+
+    await db.sessions.delete(session.id);
+    await localActionRepository.enqueue({
+      entityType: 'session',
+      entityId: session.id,
+      actionType: 'delete',
+      payload: { id: session.id }
+    });
+  },
+
+  async archive(sessionId: string): Promise<Session | null> {
+    await ensureDatabaseIsInitialized();
+    const payload = await requestJson<{ session?: Record<string, unknown> }>({
+      path: `/api/sessions/${sessionId}/archive`,
+      method: 'POST',
+      withAuth: true,
+      body: {}
+    });
+    if (!payload.session) {
+      return null;
+    }
+    const mapped = mapApiSession(payload.session);
+    await db.sessions.put(mapped);
+    return mapped;
+  },
+
+  async restore(sessionId: string): Promise<Session | null> {
+    await ensureDatabaseIsInitialized();
+    const payload = await requestJson<{ session?: Record<string, unknown> }>({
+      path: `/api/sessions/${sessionId}/restore`,
+      method: 'POST',
+      withAuth: true,
+      body: {}
+    });
+    if (!payload.session) {
+      return null;
+    }
+    const mapped = mapApiSession(payload.session);
+    await db.sessions.put(mapped);
+    return mapped;
   },
 
   async updateInitiative(sessionId: string, initiative: SessionInitiativeState): Promise<Session | null> {

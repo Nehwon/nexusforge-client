@@ -29,6 +29,12 @@ const TWO_FACTOR_CHALLENGE_TTL_MS = Number(process.env.TWO_FACTOR_CHALLENGE_TTL_
 
 const MAX_FAILED_ATTEMPTS = Number(process.env.MAX_FAILED_ATTEMPTS || 5);
 const LOCKOUT_STEPS_MINUTES = [15, 30, 60];
+const GENERIC_SESSION_SETTINGS = {
+  allowPlayerToEditCharacterOffline: true,
+  allowPlayerToPlayerChat: true,
+  allowPlayerToPlayerDocuments: true,
+  silenceMode: 'off'
+};
 
 app.use(
   cors({
@@ -256,6 +262,38 @@ function canEditSystem(system, user) {
   return system.ownerUserId === user.id || user.roles.includes('admin');
 }
 
+function getSessionGmUserIds(session) {
+  const fromArray = Array.isArray(session.gmUserIds) ? session.gmUserIds.filter((item) => typeof item === 'string') : [];
+  if (fromArray.length > 0) {
+    return Array.from(new Set(fromArray));
+  }
+
+  const fromParticipants = (session.participants || [])
+    .filter((participant) => participant.role === 'gm' && typeof participant.userId === 'string')
+    .map((participant) => participant.userId);
+  if (fromParticipants.length > 0) {
+    return Array.from(new Set(fromParticipants));
+  }
+
+  return session.gmUserId ? [session.gmUserId] : [];
+}
+
+function isSessionOwner(session, userId) {
+  if (!userId) {
+    return false;
+  }
+  const ownerId = session.ownerUserId || session.gmUserId;
+  return ownerId === userId;
+}
+
+function canManageSession(session, user) {
+  if (user.roles.includes('admin')) {
+    return true;
+  }
+
+  return isSessionOwner(session, user.id) || getSessionGmUserIds(session).includes(user.id);
+}
+
 async function sendVerificationEmail(user, token) {
   const verifyUrl = `${APP_BASE_URL.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(token)}`;
   const apiVerifyUrl = `${API_BASE_URL.replace(/\/$/, '')}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
@@ -441,7 +479,9 @@ function seedData() {
     systemId: systemOne.id,
     name: 'La Tour Oubliee',
     description: 'Exploration et intrigue',
+    ownerUserId: admin.id,
     gmUserId: admin.id,
+    gmUserIds: [admin.id],
     state: 'running',
     participants: [
       { userId: admin.id, role: 'gm', isConnected: true },
@@ -454,7 +494,8 @@ function seedData() {
       entries: []
     },
     createdAt: nowIso(),
-    updatedAt: nowIso()
+    updatedAt: nowIso(),
+    archivedAt: null
   };
 
   const sessionTwo = {
@@ -462,7 +503,9 @@ function seedData() {
     systemId: systemTwo.id,
     name: 'Neon Ashes',
     description: 'Operation de recuperation',
+    ownerUserId: gmUserId,
     gmUserId: gmUserId,
+    gmUserIds: [gmUserId],
     state: 'planned',
     participants: [
       { userId: gmUserId, role: 'gm', isConnected: false },
@@ -475,7 +518,8 @@ function seedData() {
       entries: []
     },
     createdAt: nowIso(),
-    updatedAt: nowIso()
+    updatedAt: nowIso(),
+    archivedAt: null
   };
 
   sessions.set(sessionOne.id, sessionOne);
@@ -916,14 +960,56 @@ app.post('/api/admin/users/:userId/approve', requireAuth, requireAdmin, (req, re
 
 app.get('/api/sessions', requireAuth, (req, res) => {
   const currentUser = req.currentUser;
-  const isAdmin = currentUser.roles.includes('admin');
+  const includeArchived = String(req.query?.includeArchived || 'false') === 'true';
   const items = [...sessions.values()].filter((session) => {
-    if (isAdmin || session.gmUserId === currentUser.id) {
+    if (!includeArchived && session.archivedAt) {
+      return false;
+    }
+    if (currentUser.roles.includes('admin')) {
       return true;
     }
     return (session.participants || []).some((participant) => participant.userId === currentUser.id);
   });
   return res.status(200).json({ items: items.map(clone) });
+});
+
+app.post('/api/sessions', requireAuth, (req, res) => {
+  const body = req.body || {};
+  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : 'Nouvelle partie';
+  const description = typeof body.description === 'string' ? body.description.trim() : '';
+  const systemId = typeof body.systemId === 'string' && body.systemId.trim() ? body.systemId.trim() : 'sys-steamshadows-reference';
+  const requestedState = typeof body.state === 'string' ? body.state : 'planned';
+  const state = requestedState === 'running' || requestedState === 'paused' || requestedState === 'finished' ? requestedState : 'planned';
+
+  if (!systems.has(systemId)) {
+    return error(res, 404, 'SYSTEM_NOT_FOUND', 'System not found');
+  }
+
+  const now = nowIso();
+  const session = {
+    id: makeId('session'),
+    systemId,
+    name,
+    description,
+    ownerUserId: req.currentUser.id,
+    gmUserId: req.currentUser.id,
+    gmUserIds: [req.currentUser.id],
+    state,
+    settings: body.settings && typeof body.settings === 'object' ? body.settings : clone(GENERIC_SESSION_SETTINGS),
+    participants: [{ userId: req.currentUser.id, role: 'gm', isConnected: false }],
+    initiative: {
+      round: 0,
+      turnIndex: 0,
+      isInCombat: false,
+      entries: []
+    },
+    createdAt: now,
+    updatedAt: now,
+    archivedAt: null
+  };
+
+  sessions.set(session.id, session);
+  return res.status(201).json({ session: clone(session) });
 });
 
 app.get('/api/sessions/:sessionId', requireAuth, (req, res) => {
@@ -935,7 +1021,7 @@ app.get('/api/sessions/:sessionId', requireAuth, (req, res) => {
   const currentUser = req.currentUser;
   const isAllowed =
     currentUser.roles.includes('admin') ||
-    session.gmUserId === currentUser.id ||
+    getSessionGmUserIds(session).includes(currentUser.id) ||
     (session.participants || []).some((participant) => participant.userId === currentUser.id);
 
   if (!isAllowed) {
@@ -952,23 +1038,107 @@ app.patch('/api/sessions/:sessionId', requireAuth, (req, res) => {
   }
 
   const currentUser = req.currentUser;
-  if (session.gmUserId !== currentUser.id && !currentUser.roles.includes('admin')) {
+  if (!canManageSession(session, currentUser)) {
     return error(res, 403, 'SESSION_ACCESS_FORBIDDEN', 'Only GM/admin can edit session');
   }
 
   const patch = req.body || {};
+  let nextParticipants = Array.isArray(patch.participants) ? patch.participants : session.participants || [];
+  let nextGmUserIds = Array.isArray(patch.gmUserIds) ? patch.gmUserIds.filter((item) => typeof item === 'string') : getSessionGmUserIds(session);
+
+  if (Array.isArray(patch.gmUserIds) && nextParticipants.length > 0) {
+    nextParticipants = nextParticipants.map((participant) =>
+      nextGmUserIds.includes(participant.userId) ? { ...participant, role: 'gm' } : participant
+    );
+  }
+
+  if (Array.isArray(patch.participants)) {
+    nextGmUserIds = Array.from(
+      new Set(
+        nextParticipants
+          .filter((participant) => participant.role === 'gm' && typeof participant.userId === 'string')
+          .map((participant) => participant.userId)
+      )
+    );
+  }
+  if (nextGmUserIds.length === 0) {
+    nextGmUserIds = [session.gmUserId];
+  }
+
+  const nextOwnerUserId = typeof patch.ownerUserId === 'string' ? patch.ownerUserId : session.ownerUserId || session.gmUserId;
+  if (nextOwnerUserId !== (session.ownerUserId || session.gmUserId) && !isSessionOwner(session, currentUser.id) && !currentUser.roles.includes('admin')) {
+    return error(res, 403, 'SESSION_TRANSFER_FORBIDDEN', 'Only owner/admin can transfer ownership');
+  }
+
   const next = {
     ...session,
     ...(typeof patch.name === 'string' ? { name: patch.name } : {}),
     ...(typeof patch.description === 'string' ? { description: patch.description } : {}),
     ...(typeof patch.state === 'string' ? { state: patch.state } : {}),
     ...(typeof patch.systemId === 'string' ? { systemId: patch.systemId } : {}),
+    ownerUserId: nextOwnerUserId,
+    gmUserId: nextGmUserIds[0],
+    gmUserIds: nextGmUserIds,
     ...(patch.settings ? { settings: patch.settings } : {}),
-    ...(Array.isArray(patch.participants) ? { participants: patch.participants } : {}),
+    participants: nextParticipants,
+    ...(typeof patch.archivedAt === 'string' || patch.archivedAt === null ? { archivedAt: patch.archivedAt } : {}),
     ...(patch.initiative ? { initiative: patch.initiative } : {}),
     updatedAt: nowIso()
   };
 
+  sessions.set(next.id, next);
+  return res.status(200).json({ session: clone(next) });
+});
+
+app.delete('/api/sessions/:sessionId', requireAuth, (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session) {
+    return error(res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+  }
+
+  const isOwner = isSessionOwner(session, req.currentUser.id);
+  if (!isOwner && !req.currentUser.roles.includes('admin')) {
+    return error(res, 403, 'SESSION_DELETE_FORBIDDEN', 'Only owner/admin can delete this session');
+  }
+
+  sessions.delete(session.id);
+  return res.status(204).send();
+});
+
+app.post('/api/sessions/:sessionId/archive', requireAuth, (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session) {
+    return error(res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+  }
+
+  if (!canManageSession(session, req.currentUser)) {
+    return error(res, 403, 'SESSION_ARCHIVE_FORBIDDEN', 'Only GM/admin can archive this session');
+  }
+
+  const next = {
+    ...session,
+    archivedAt: nowIso(),
+    updatedAt: nowIso()
+  };
+  sessions.set(next.id, next);
+  return res.status(200).json({ session: clone(next) });
+});
+
+app.post('/api/sessions/:sessionId/restore', requireAuth, (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session) {
+    return error(res, 404, 'SESSION_NOT_FOUND', 'Session not found');
+  }
+
+  if (!canManageSession(session, req.currentUser)) {
+    return error(res, 403, 'SESSION_ARCHIVE_FORBIDDEN', 'Only GM/admin can restore this session');
+  }
+
+  const next = {
+    ...session,
+    archivedAt: null,
+    updatedAt: nowIso()
+  };
   sessions.set(next.id, next);
   return res.status(200).json({ session: clone(next) });
 });

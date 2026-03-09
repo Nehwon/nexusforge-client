@@ -209,8 +209,12 @@ Règles:
 Toujours disponibles comme dans le MVP existant:
 
 - `GET /api/sessions`
+- `POST /api/sessions`
 - `GET /api/sessions/{id}`
 - `PATCH /api/sessions/{id}`
+- `DELETE /api/sessions/{id}`
+- `POST /api/sessions/{id}/archive`
+- `POST /api/sessions/{id}/restore`
 - `GET /api/systems`
 - `GET /api/systems/{id}`
 - `POST /api/systems`

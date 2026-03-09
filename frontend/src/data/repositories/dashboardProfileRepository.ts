@@ -9,17 +9,18 @@ function buildDefaultWidgetSizes(widgetIds: string[]): Record<string, DashboardW
 }
 
 export const dashboardProfileRepository = {
-  async listForUserRole(userId: string, role: DashboardRole): Promise<DashboardProfile[]> {
+  async listForUserRole(userId: string, role: DashboardRole, sessionId?: string | null): Promise<DashboardProfile[]> {
     await ensureDatabaseIsInitialized();
     const profiles = await db.dashboardProfiles.where('userId').equals(userId).toArray();
     return profiles
-      .filter((profile) => profile.role === role)
+      .filter((profile) => profile.role === role && (profile.sessionId ?? null) === (sessionId ?? null))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   },
 
   async createProfile(params: {
     userId: string;
     role: DashboardRole;
+    sessionId?: string | null;
     name: string;
     widgetIds: string[];
     sourceProfile?: DashboardProfile;
@@ -32,6 +33,7 @@ export const dashboardProfileRepository = {
       id: crypto.randomUUID(),
       userId: params.userId,
       role: params.role,
+      sessionId: params.sessionId ?? null,
       name: params.name,
       isFavorite: params.isFavorite ?? false,
       widgetOrder: params.sourceProfile?.widgetOrder ?? params.widgetIds,
