@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../../../components/Layout';
-import Button from '../../../components/Button';
 import { useAuth } from '../../../hooks/useAuth';
 import { Session } from '../../../types/session';
 import { sessionRepository } from '../../../data/repositories';
 
 export default function SessionsListPage() {
-  const { currentUser, logout } = useAuth();
+  const { currentUser } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -41,18 +40,9 @@ export default function SessionsListPage() {
 
   return (
     <Layout>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-        <div>
-          <h1>Sessions</h1>
-          <p style={{ marginTop: 0 }}>Connecté en tant que {currentUser?.displayName}</p>
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <Link to="/account/security">Sécurité du compte</Link>
-            {currentUser?.roles.includes('admin') ? <Link to="/admin/users/pending">Validation comptes</Link> : null}
-          </div>
-        </div>
-        <Button variant="secondary" onClick={logout}>
-          Se déconnecter
-        </Button>
+      <header>
+        <h1>Sessions</h1>
+        <p style={{ marginTop: 0 }}>Connecté en tant que {currentUser?.displayName}</p>
       </header>
 
       <section className="grid">
