@@ -62,6 +62,17 @@ class NexusForgeDatabase extends Dexie {
       localActions: 'id, entityType, entityId, createdAt, syncStatus',
       dashboardProfiles: 'id, userId, role, isFavorite, updatedAt'
     });
+
+    this.version(5).stores({
+      systems: 'id, ownerUserId, visibility, updatedAt',
+      characters: 'id, systemId, ownerUserId, sessionId',
+      sessions: 'id, gmUserId, state, updatedAt',
+      notes: 'id, type, scope, scopeRefId, updatedAt',
+      messages: 'id, sessionId, channelType, channelId, createdAt',
+      documents: 'id, sessionId, ownerUserId, createdAt',
+      localActions: 'id, entityType, entityId, createdAt, syncStatus',
+      dashboardProfiles: 'id, userId, role, isFavorite, updatedAt'
+    });
   }
 }
 
