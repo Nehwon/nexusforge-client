@@ -115,6 +115,12 @@ Le runtime du Studio (et la fiche Studio dans une partie) respecte maintenant l 
 
 Le rendu ne se fait plus en liste plate de boites.
 
+Le rendu privilegie maintenant le resultat:
+
+- pas d affichage systematique des metadonnees techniques (`key`, type),
+- affichage de la valeur utile,
+- pour les champs avec `formula`, affichage du resultat calcule.
+
 ## Studio d'ecran de partie
 
 Route dediee:

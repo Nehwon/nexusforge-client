@@ -1244,6 +1244,11 @@ body.theme-dark .system-builder__toolbar {
   gap: 0.65rem;
 }
 
+.studio-runtime-leaf {
+  display: grid;
+  gap: 0.35rem;
+}
+
 .studio-runtime-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));

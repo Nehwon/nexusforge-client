@@ -1733,21 +1733,23 @@ export default function SystemStudioPage() {
 
   const renderRuntimeField = (component: StudioComponentDefinition): JSX.Element => {
     const value = runtimeValues[component.key];
+    const isDerived = Boolean(component.formula?.trim());
     return (
-      <article key={`runtime-${component.id}`} className="studio-runtime-item">
-        <strong>{component.label || component.key}</strong>
-        <small>{component.key}</small>
-        {component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar' ? (
+      <div key={`runtime-${component.id}`} className="studio-runtime-leaf">
+        {component.type === 'label' ? <p style={{ margin: 0 }}>{String(value || component.defaultValue || component.label || '')}</p> : null}
+        {isDerived && component.type !== 'label' ? <p style={{ margin: 0 }}>{String(value ?? '')}</p> : null}
+        {!isDerived &&
+        (component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar') ? (
           <input
             type={component.type === 'color' ? 'color' : component.type === 'date' ? 'date' : component.type === 'time' ? 'time' : 'text'}
             value={typeof value === 'string' ? value : ''}
             onChange={(event) => setRuntimeValue(component, event.target.value)}
           />
         ) : null}
-        {component.type === 'textarea' ? (
+        {!isDerived && component.type === 'textarea' ? (
           <textarea rows={2} value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)} />
         ) : null}
-        {component.type === 'number' || component.type === 'range' ? (
+        {!isDerived && (component.type === 'number' || component.type === 'range') ? (
           <input
             type={component.type === 'number' ? 'number' : 'range'}
             min={component.min ?? 0}
@@ -1757,12 +1759,12 @@ export default function SystemStudioPage() {
             onChange={(event) => setRuntimeValue(component, Number(event.target.value))}
           />
         ) : null}
-        {component.type === 'checkbox' ? (
+        {!isDerived && component.type === 'checkbox' ? (
           <label>
             <input type="checkbox" checked={Boolean(value)} onChange={(event) => setRuntimeValue(component, event.target.checked)} /> active
           </label>
         ) : null}
-        {component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested' ? (
+        {!isDerived && (component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested') ? (
           <select value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)}>
             {(component.options ?? []).map((option) => (
               <option key={option} value={option}>
@@ -1771,13 +1773,12 @@ export default function SystemStudioPage() {
             ))}
           </select>
         ) : null}
-        {component.type === 'button' ? (
+        {!isDerived && component.type === 'button' ? (
           <button className="button secondary" onClick={() => runButtonScript(component)}>
             {String(component.defaultValue || component.label || 'Action')}
           </button>
         ) : null}
-        {component.type === 'label' ? <p style={{ margin: 0 }}>{String(component.defaultValue || component.label || '')}</p> : null}
-        {component.type === 'dice_roll' ? (
+        {!isDerived && component.type === 'dice_roll' ? (
           <button
             className="button secondary"
             onClick={() => {
@@ -1792,7 +1793,7 @@ export default function SystemStudioPage() {
             Lancer ({component.diceFormula || component.formula || '1d20'})
           </button>
         ) : null}
-        {component.type === 'table' || component.type === 'inventory' ? (
+        {!isDerived && (component.type === 'table' || component.type === 'inventory') ? (
           <div style={{ display: 'grid', gap: '0.3rem' }}>
             <code>{(component.columns ?? []).join(' | ')}</code>
             <button
@@ -1812,7 +1813,7 @@ export default function SystemStudioPage() {
             <small>Lignes: {Array.isArray(value) ? value.length : 0}</small>
           </div>
         ) : null}
-        {component.type === 'relation' ? (
+        {!isDerived && component.type === 'relation' ? (
           <div style={{ display: 'grid', gap: '0.25rem' }}>
             <select value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)}>
               <option value="">Cible</option>
@@ -1825,11 +1826,8 @@ export default function SystemStudioPage() {
             <small>target: {component.relationTarget || '(non defini)'}</small>
           </div>
         ) : null}
-        {component.formula ? <small>formule: {component.formula}</small> : null}
-        {component.reference ? <small>ref: {component.reference}</small> : null}
-        {component.showIf ? <small>showIf: {component.showIf}</small> : null}
         {runtimeValidationErrors[component.key] ? <small style={{ color: '#b42318' }}>{runtimeValidationErrors[component.key]}</small> : null}
-      </article>
+      </div>
     );
   };
 
@@ -1852,19 +1850,7 @@ export default function SystemStudioPage() {
       return renderRuntimeField(component);
     }
 
-    return (
-      <article key={`runtime-node-${component.id}`} className={`studio-runtime-node type-${component.type}`}>
-        <div className="studio-runtime-node__head">
-          <strong>{component.label || component.key}</strong>
-          <span className="studio-runtime-node__badge">{component.type}</span>
-        </div>
-        {renderedChildren.length > 0 ? (
-          <div className={`studio-runtime-children type-${component.type}`}>{renderedChildren}</div>
-        ) : (
-          <small>Aucun bloc enfant.</small>
-        )}
-      </article>
-    );
+    return <div key={`runtime-node-${component.id}`} className={`studio-runtime-children type-${component.type}`}>{renderedChildren}</div>;
   };
 
   const runScriptTester = () => {
@@ -1979,7 +1965,10 @@ export default function SystemStudioPage() {
         }}
         onDragLeave={() => setDragOverComponentId((current) => (current === component.id ? null : current))}
         onDrop={(event) => handleComponentDrop(event, component.id)}
-        onClick={() => setSelectedComponentId(component.id)}
+        onClick={(event) => {
+          event.stopPropagation();
+          setSelectedComponentId(component.id);
+        }}
       >
         <div className="studio-component-card__head">
           <strong>{component.label || '(sans label)'}</strong>

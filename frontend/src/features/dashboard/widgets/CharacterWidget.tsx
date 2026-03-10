@@ -718,22 +718,23 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
 
   const renderStudioRuntimeField = (component: StudioComponent): JSX.Element => {
     const value = studioRuntimeValues[component.key];
+    const isDerived = Boolean(component.formula?.trim());
     return (
-      <article key={`studio-runtime-${component.id}`} className="studio-runtime-item">
-        <strong>{component.label || component.key}</strong>
-        <small>{component.key}</small>
-
-        {component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar' ? (
+      <div key={`studio-runtime-${component.id}`} className="studio-runtime-leaf">
+        {component.type === 'label' ? <p style={{ margin: 0 }}>{String(value || component.defaultValue || component.label || '')}</p> : null}
+        {isDerived && component.type !== 'label' ? <p style={{ margin: 0 }}>{String(value ?? '')}</p> : null}
+        {!isDerived &&
+        (component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar') ? (
           <input
             type={component.type === 'color' ? 'color' : component.type === 'date' ? 'date' : component.type === 'time' ? 'time' : 'text'}
             value={typeof value === 'string' ? value : ''}
             onChange={(event) => setStudioRuntimeValue(component, event.target.value)}
           />
         ) : null}
-        {component.type === 'textarea' ? (
+        {!isDerived && component.type === 'textarea' ? (
           <textarea rows={2} value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)} />
         ) : null}
-        {component.type === 'number' || component.type === 'range' ? (
+        {!isDerived && (component.type === 'number' || component.type === 'range') ? (
           <input
             type={component.type === 'number' ? 'number' : 'range'}
             min={component.min ?? 0}
@@ -743,12 +744,12 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
             onChange={(event) => setStudioRuntimeValue(component, Number(event.target.value))}
           />
         ) : null}
-        {component.type === 'checkbox' ? (
+        {!isDerived && component.type === 'checkbox' ? (
           <label>
             <input type="checkbox" checked={Boolean(value)} onChange={(event) => setStudioRuntimeValue(component, event.target.checked)} /> active
           </label>
         ) : null}
-        {component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested' ? (
+        {!isDerived && (component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested') ? (
           <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
             {(component.options ?? []).map((option) => (
               <option key={option} value={option}>
@@ -757,7 +758,7 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
             ))}
           </select>
         ) : null}
-        {component.type === 'button' ? (
+        {!isDerived && component.type === 'button' ? (
           <button
             className="button secondary"
             onClick={() => {
@@ -767,7 +768,7 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
             {String(component.defaultValue || component.label || 'Action')}
           </button>
         ) : null}
-        {component.type === 'dice_roll' ? (
+        {!isDerived && component.type === 'dice_roll' ? (
           <button
             className="button secondary"
             onClick={() => {
@@ -788,8 +789,8 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
             Lancer ({component.diceFormula || component.formula || '1d20'})
           </button>
         ) : null}
-        {component.type === 'table' || component.type === 'inventory' ? <small>Colonnes: {(component.columns ?? []).join(', ') || '-'}</small> : null}
-        {component.type === 'relation' ? (
+        {!isDerived && (component.type === 'table' || component.type === 'inventory') ? <small>Colonnes: {(component.columns ?? []).join(', ') || '-'}</small> : null}
+        {!isDerived && component.type === 'relation' ? (
           <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
             <option value="">Cible</option>
             {selectedStudioView?.components
@@ -801,10 +802,8 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
               ))}
           </select>
         ) : null}
-        {component.formula ? <small>formule: {component.formula}</small> : null}
-        {component.showIf ? <small>showIf: {component.showIf}</small> : null}
         {studioValidationErrors[component.key] ? <small style={{ color: '#b42318' }}>{studioValidationErrors[component.key]}</small> : null}
-      </article>
+      </div>
     );
   };
 
@@ -827,19 +826,7 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
       return renderStudioRuntimeField(component);
     }
 
-    return (
-      <article key={`studio-runtime-node-${component.id}`} className={`studio-runtime-node type-${component.type}`}>
-        <div className="studio-runtime-node__head">
-          <strong>{component.label || component.key}</strong>
-          <span className="studio-runtime-node__badge">{component.type}</span>
-        </div>
-        {renderedChildren.length > 0 ? (
-          <div className={`studio-runtime-children type-${component.type}`}>{renderedChildren}</div>
-        ) : (
-          <small>Aucun bloc enfant.</small>
-        )}
-      </article>
-    );
+    return <div key={`studio-runtime-node-${component.id}`} className={`studio-runtime-children type-${component.type}`}>{renderedChildren}</div>;
   };
 
   return (
