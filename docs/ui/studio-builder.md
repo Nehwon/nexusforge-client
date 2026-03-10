@@ -1,0 +1,62 @@
+# Studio Builder (Systemes & Interfaces)
+
+## Objectif
+
+Le Studio Builder est l'editeur visuel de Nexus Forge pour:
+
+- construire un systeme de jeu (schema studio),
+- personnaliser les ecrans de partie (profils MJ/Joueur).
+
+Le principe est unique partout: blocs visuels imbriques + drag&drop.
+
+## Regles d'imbrication
+
+- `table` / `inventory` contient des `row`.
+- `row` contient des `column`.
+- `column` contient des champs (texte, nombre, etc.).
+- `logic_if` contient `logic_then` / `logic_else` / `logic_or` / `logic_not`.
+- les autres conteneurs (`container`, `tabs`, `view`, `repeater`) acceptent des sous-blocs selon les regles du Studio.
+
+## Actions avancees sur un bloc
+
+Depuis le panneau Proprietes d'un bloc selectionne:
+
+1. `Dupliquer bloc + enfants`
+2. `Export bloc JSON`
+3. `Import bloc JSON (ajout dans la vue)`
+
+### Duplication
+
+- Duplique le bloc selectionne et toute son arborescence.
+- Regle automatiquement les nouveaux IDs.
+- Regle automatiquement les cles techniques (`key`) pour eviter les collisions.
+
+### Export JSON
+
+- Exporte le bloc selectionne + descendants.
+- Format: `nexusforge.studio.block.v1`.
+- Le JSON est place dans la zone d'import et copie dans le presse-papiers si disponible.
+
+### Import JSON
+
+- Accepte:
+  - un objet `{ "format": "...", "components": [...] }`,
+  - ou directement un tableau `[...]` de composants.
+- Le Studio regenere IDs + `key` pour eviter les conflits.
+- Si un bloc est selectionne et compatible, le bloc racine importe est accroche a ce bloc.
+
+## Studio d'ecran de partie
+
+Route dediee:
+
+- `/sessions/:sessionId/studio?role=gm`
+- `/sessions/:sessionId/studio?role=player`
+
+Chaque compte peut avoir plusieurs interfaces favorites par role et par partie.
+
+## Bonnes pratiques
+
+- Nommer les blocs et cles de facon explicite.
+- Utiliser la duplication pour creer des patterns reutilisables.
+- Versionner les blocs complexes via export JSON.
+- Tester les scripts boutons dans le testeur integre avant sauvegarde finale.

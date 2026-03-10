@@ -277,6 +277,27 @@ function getComponentFamily(type: StudioComponentType): 'layout' | 'logic' | 'ac
   return 'field';
 }
 
+function getSubtreeComponents(components: StudioComponentDefinition[], rootId: string): StudioComponentDefinition[] {
+  const childrenByParent = buildChildrenMap(components);
+  const ids = new Set([rootId, ...collectDescendantIds(rootId, childrenByParent)]);
+  return components.filter((component) => ids.has(component.id));
+}
+
+function makeUniqueKey(baseKey: string, usedKeys: Set<string>): string {
+  let normalized = baseKey.trim().replace(/\s+/g, '_').replace(/[^A-Za-z0-9_]/g, '');
+  if (!normalized) {
+    normalized = `field_${Math.random().toString(36).slice(2, 6)}`;
+  }
+  let candidate = normalized;
+  let index = 2;
+  while (usedKeys.has(candidate)) {
+    candidate = `${normalized}_${index}`;
+    index += 1;
+  }
+  usedKeys.add(candidate);
+  return candidate;
+}
+
 function defaultRuntimeValue(component: StudioComponentDefinition): RuntimeValue {
   if (component.type === 'checkbox') {
     return Boolean(component.defaultValue);
@@ -594,6 +615,7 @@ export default function SystemStudioPage() {
   const [editorUserIdsDraft, setEditorUserIdsDraft] = useState('');
   const [scriptTestInput, setScriptTestInput] = useState('{}');
   const [scriptTestResult, setScriptTestResult] = useState<string>('');
+  const [blockJsonDraft, setBlockJsonDraft] = useState('');
   const lastSavedSchemaRef = useRef<string>('');
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
@@ -1057,6 +1079,146 @@ export default function SystemStudioPage() {
     const idsToDelete = new Set([selectedComponent.id, ...collectDescendantIds(selectedComponent.id, childrenMap)]);
     updateSelectedView((view) => ({ ...view, components: view.components.filter((item) => !idsToDelete.has(item.id)) }));
     setSelectedComponentId('');
+  };
+
+  const duplicateSelectedComponentTree = () => {
+    if (!canEdit || !selectedView || !selectedComponent) {
+      return;
+    }
+    const subtree = getSubtreeComponents(selectedView.components, selectedComponent.id);
+    if (subtree.length === 0) {
+      return;
+    }
+
+    const idMap = new Map<string, string>();
+    for (const component of subtree) {
+      idMap.set(component.id, makeId('cmp'));
+    }
+
+    const usedKeys = new Set(selectedView.components.map((component) => component.key));
+    const rootId = selectedComponent.id;
+    const clones = subtree.map((component) => {
+      const nextId = idMap.get(component.id) || makeId('cmp');
+      const clonedParent =
+        component.id === rootId
+          ? component.parentId
+          : component.parentId && idMap.has(component.parentId)
+          ? idMap.get(component.parentId)
+          : component.parentId;
+      const baseKey = component.id === rootId ? `${component.key}_copy` : component.key;
+      return {
+        ...component,
+        id: nextId,
+        parentId: clonedParent,
+        label: component.id === rootId ? `${component.label || component.type} (copie)` : component.label,
+        key: makeUniqueKey(baseKey, usedKeys)
+      };
+    });
+
+    const subtreeIds = new Set(subtree.map((component) => component.id));
+    const insertionIndex = selectedView.components.reduce(
+      (lastIndex, component, index) => (subtreeIds.has(component.id) ? index : lastIndex),
+      -1
+    );
+
+    updateSelectedView((view) => {
+      const next = [...view.components];
+      next.splice(insertionIndex + 1, 0, ...clones);
+      return { ...view, components: next };
+    });
+    setSelectedComponentId(clones[0]?.id ?? '');
+    setStatusMessage(`Bloc duplique: ${selectedComponent.label || selectedComponent.type}`);
+  };
+
+  const exportSelectedComponentTree = async () => {
+    if (!selectedView || !selectedComponent) {
+      return;
+    }
+    const subtree = getSubtreeComponents(selectedView.components, selectedComponent.id);
+    const payload = {
+      format: 'nexusforge.studio.block.v1',
+      exportedAt: new Date().toISOString(),
+      rootId: selectedComponent.id,
+      components: subtree
+    };
+    const json = JSON.stringify(payload, null, 2);
+    setBlockJsonDraft(json);
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(json);
+        setStatusMessage('Bloc exporte en JSON (copie dans le presse-papiers).');
+        return;
+      }
+    } catch {
+      // fallback to textarea only
+    }
+    setStatusMessage('Bloc exporte en JSON.');
+  };
+
+  const importComponentTreeFromJson = () => {
+    if (!canEdit || !selectedView) {
+      return;
+    }
+    const raw = blockJsonDraft.trim();
+    if (!raw) {
+      setErrorMessage('JSON vide.');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as { rootId?: string; components?: StudioComponentDefinition[] } | StudioComponentDefinition[];
+      const imported = Array.isArray(parsed) ? parsed : parsed.components;
+      if (!Array.isArray(imported) || imported.length === 0) {
+        setErrorMessage('JSON invalide: components manquants.');
+        return;
+      }
+
+      const normalized = imported
+        .filter(
+          (item): item is StudioComponentDefinition =>
+            Boolean(item && typeof item.id === 'string' && typeof item.type === 'string' && typeof item.key === 'string')
+        )
+        .map((item) => ({ ...item }));
+      if (normalized.length === 0) {
+        setErrorMessage('JSON invalide: aucun composant exploitable.');
+        return;
+      }
+
+      const importedIdSet = new Set(normalized.map((item) => item.id));
+      const rootCandidates = normalized.filter((item) => !item.parentId || !importedIdSet.has(item.parentId));
+      const rootSource = rootCandidates[0] ?? normalized[0];
+      const attachToSelected =
+        selectedComponent && rootSource ? canContain(selectedComponent.type, rootSource.type) : false;
+
+      const idMap = new Map<string, string>();
+      for (const component of normalized) {
+        idMap.set(component.id, makeId('cmp'));
+      }
+      const usedKeys = new Set(selectedView.components.map((component) => component.key));
+      const clones = normalized.map((component) => {
+        const nextId = idMap.get(component.id) || makeId('cmp');
+        const hasLocalParent = Boolean(component.parentId && importedIdSet.has(component.parentId));
+        const nextParentId = hasLocalParent
+          ? idMap.get(component.parentId as string)
+          : attachToSelected && component.id === rootSource.id
+          ? selectedComponent?.id
+          : undefined;
+        return {
+          ...component,
+          id: nextId,
+          parentId: nextParentId,
+          key: makeUniqueKey(`${component.key}_imp`, usedKeys)
+        };
+      });
+
+      updateSelectedView((view) => ({ ...view, components: [...view.components, ...clones] }));
+      setSelectedComponentId(idMap.get(rootSource.id) ?? clones[0]?.id ?? '');
+      setStatusMessage(`Import JSON reussi: ${clones.length} bloc(s) ajoute(s).`);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? `Import JSON invalide: ${error.message}` : 'Import JSON invalide.');
+    }
   };
 
   const saveStudio = async (options?: { auto?: boolean }) => {
@@ -1972,6 +2134,30 @@ export default function SystemStudioPage() {
                         <option value="true">Oui</option>
                       </select>
                     </label>
+
+                    <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <Button type="button" variant="secondary" onClick={duplicateSelectedComponentTree} disabled={!canEdit}>
+                        Dupliquer bloc + enfants
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => void exportSelectedComponentTree()} disabled={!selectedComponent}>
+                        Export bloc JSON
+                      </Button>
+                    </div>
+                    <label>
+                      <span>Import bloc JSON (ajout dans la vue)</span>
+                      <textarea
+                        rows={8}
+                        value={blockJsonDraft}
+                        onChange={(event) => setBlockJsonDraft(event.target.value)}
+                        placeholder='{"format":"nexusforge.studio.block.v1","components":[...]}'
+                        disabled={!canEdit}
+                      />
+                    </label>
+                    <div>
+                      <Button type="button" variant="secondary" onClick={importComponentTreeFromJson} disabled={!canEdit || !blockJsonDraft.trim()}>
+                        Importer bloc JSON
+                      </Button>
+                    </div>
 
                     <Button type="button" variant="secondary" onClick={deleteSelectedComponent} disabled={!canEdit}>
                       Supprimer ce composant

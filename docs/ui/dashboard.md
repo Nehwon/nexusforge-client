@@ -2,6 +2,10 @@
 
 Ce document décrit le fonctionnement du dashboard dans Nexus Forge, pour les rôles MJ et joueur, ainsi que les widgets disponibles (et ceux inclus dans la V1).
 
+Guide Studio visuel associe:
+
+- [`studio-builder.md`](./studio-builder.md)
+
 ---
 
 ## 1. Principes généraux
