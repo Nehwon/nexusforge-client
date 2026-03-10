@@ -75,11 +75,14 @@ Mapping principal:
 - `table` -> `table` (colonnes depuis `th`/première ligne),
 - conteneurs HTML (`div/section/form/fieldset/...`) -> `container`,
 - layouts type `row/grid/flex` -> `row` + `column`.
+- `nav` / `tablist` / menus a boutons -> `tabs` (options detectees automatiquement).
+- balises texte (`h1...h6`, `p`, `span`, `strong`) -> `label`.
 
 Le convertisseur:
 
 - recrée les IDs et les `key` pour éviter les collisions,
 - tente de retrouver les labels via `label[for]`, `aria-label`, `placeholder`, `name`, `id`,
+- supprime automatiquement les wrappers HTML generiques inutiles (ex: `div/section` techniques),
 - ajoute les blocs à la fin de la vue active.
 
 ## Onglet "Tableau des champs"

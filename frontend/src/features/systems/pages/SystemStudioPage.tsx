@@ -362,6 +362,18 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
   const components: StudioComponentDefinition[] = [];
   const warnings: string[] = [];
   const usedKeys = new Set<string>();
+  const genericContainerLabels = new Set([
+    'div',
+    'span',
+    'section',
+    'article',
+    'main',
+    'body',
+    'wrapper',
+    'container',
+    'groupe',
+    'group'
+  ]);
 
   const createComponent = (
     type: StudioComponentType,
@@ -406,6 +418,50 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
     const style = `${el.getAttribute('style') || ''}`.toLowerCase();
     return /\brow\b/.test(c) || /\bgrid\b/.test(c) || /\bflex\b/.test(c) || style.includes('display:flex') || style.includes('display: grid');
   };
+  const isColumnLike = (el: HTMLElement): boolean => {
+    const c = `${el.className || ''}`.toLowerCase();
+    return /\bcol\b/.test(c) || /\bcolumn\b/.test(c);
+  };
+  const isTabsLike = (el: HTMLElement): boolean => {
+    const tag = el.tagName.toLowerCase();
+    const c = `${el.className || ''}`.toLowerCase();
+    const hasTabClass = /\btabs?\b/.test(c) || /\bmenu\b/.test(c) || el.getAttribute('role') === 'tablist' || tag === 'nav';
+    if (!hasTabClass) {
+      return false;
+    }
+    const options = Array.from(el.querySelectorAll('button, a, [role="tab"]'))
+      .map((node) => node.textContent?.trim() || '')
+      .filter(Boolean);
+    return options.length >= 2;
+  };
+  const toHumanLabel = (raw: string): string =>
+    raw
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const inferLabel = (el: HTMLElement, fallback: string): string => {
+    const heading =
+      el.querySelector(':scope > legend, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6')?.textContent?.trim() ||
+      el.getAttribute('aria-label') ||
+      '';
+    if (heading) {
+      return heading;
+    }
+    const id = el.getAttribute('id') || '';
+    if (id) {
+      return toHumanLabel(id);
+    }
+    const className = `${el.className || ''}`
+      .split(/\s+/)
+      .map((item) => item.trim())
+      .find((item) => item.length > 0 && !/^(row|col|column|container|wrapper|grid|flex)$/i.test(item));
+    if (className) {
+      return toHumanLabel(className);
+    }
+    return fallback;
+  };
+  const hasExplicitIdentity = (el: HTMLElement): boolean =>
+    Boolean(el.getAttribute('id') || el.getAttribute('aria-label') || `${el.className || ''}`.trim());
 
   const toInputType = (el: HTMLElement): StudioComponentType => {
     const tag = el.tagName.toLowerCase();
@@ -441,6 +497,13 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
     }
 
     const tag = el.tagName.toLowerCase();
+    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'strong', 'em'].includes(tag)) {
+      const text = el.textContent?.trim();
+      if (text) {
+        createComponent('label', text, parentId, text);
+      }
+      return;
+    }
     if (tag === 'table') {
       const label = extractElementLabel(el, labelsByFor) || 'Tableau';
       const table = createComponent('table', label, parentId, label);
@@ -488,19 +551,41 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
       return;
     }
 
-    const heading =
-      el.querySelector(':scope > legend, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6')?.textContent?.trim() ||
-      el.getAttribute('aria-label') ||
-      '';
-    const label = heading || el.getAttribute('id') || el.tagName.toLowerCase();
+    if (isTabsLike(el)) {
+      const label = inferLabel(el, 'Onglets');
+      const tabs = createComponent('tabs', label, parentId, label);
+      const options = Array.from(el.querySelectorAll('button, a, [role="tab"]'))
+        .map((item) => item.textContent?.trim() || '')
+        .filter(Boolean);
+      tabs.options = options.length > 0 ? options : ['Onglet 1', 'Onglet 2'];
+      tabs.defaultValue = tabs.options[0] ?? '';
+      return;
+    }
+
+    const label = inferLabel(el, el.tagName.toLowerCase());
+
+    if (children.length === 1 && !hasExplicitIdentity(el) && !isRowLike(el) && !isColumnLike(el)) {
+      processNode(children[0], parentId);
+      return;
+    }
 
     if (isRowLike(el) && children.length > 1) {
       const row = createComponent('row', label || 'Ligne', parentId, label || 'row');
       children.forEach((child) => {
-        const colLabel = (child as HTMLElement).getAttribute('aria-label') || (child as HTMLElement).getAttribute('id') || 'Colonne';
+        const colLabel = inferLabel(child as HTMLElement, 'Colonne');
         const col = createComponent('column', colLabel, row.id, colLabel);
         processNode(child, col.id);
       });
+      return;
+    }
+
+    if (isColumnLike(el)) {
+      const column = createComponent('column', label || 'Colonne', parentId, label || 'column');
+      const beforeCount = components.length;
+      children.forEach((child) => processNode(child, column.id));
+      if (components.length === beforeCount) {
+        components.pop();
+      }
       return;
     }
 
@@ -516,7 +601,43 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
   const roots = Array.from(doc.body.children);
   roots.forEach((root) => processNode(root, undefined));
 
-  return { components, warnings };
+  let normalized = [...components];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const childrenByParent = normalized.reduce<Record<string, StudioComponentDefinition[]>>((acc, component) => {
+      if (!component.parentId) {
+        return acc;
+      }
+      if (!acc[component.parentId]) {
+        acc[component.parentId] = [];
+      }
+      acc[component.parentId].push(component);
+      return acc;
+    }, {});
+
+    for (const component of [...normalized]) {
+      if (component.type !== 'container' && component.type !== 'column') {
+        continue;
+      }
+      const children = childrenByParent[component.id] ?? [];
+      if (children.length !== 1) {
+        continue;
+      }
+      const label = (component.label || '').trim().toLowerCase();
+      if (!genericContainerLabels.has(label) && !label.startsWith('container')) {
+        continue;
+      }
+      const onlyChild = children[0];
+      normalized = normalized
+        .filter((item) => item.id !== component.id)
+        .map((item) => (item.id === onlyChild.id ? { ...item, parentId: component.parentId } : item));
+      changed = true;
+      break;
+    }
+  }
+
+  return { components: normalized, warnings };
 }
 
 function defaultRuntimeValue(component: StudioComponentDefinition): RuntimeValue {
