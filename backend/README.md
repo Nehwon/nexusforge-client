@@ -44,16 +44,13 @@ npm start
 
 ## Sauvegarde déploiement O2switch (recommandé)
 
-Scripts fournis dans le repo:
+Le runbook de déploiement/backup production est maintenu en scripts privés hors dépôt.
+Règles minimales:
 
-- `scripts/o2switch/backup-fetch-state.sh`:
-  - crée une archive distante de `backend/data/state.json`,
-  - rapatrie l'archive en local (hors git), dossier par défaut: `~/nexusforge-prod-backups`.
-- `scripts/o2switch/deploy-with-backup.sh`:
-  - fait le backup ci-dessus,
-  - build et déploie frontend,
-  - déploie backend en préservant `data/` et `.env`,
-  - redémarre l'app Node.
+- backup de `backend/data/state.json` avant chaque déploiement,
+- récupération du backup en local hors git,
+- déploiement backend sans écraser `data/` et `.env`,
+- redémarrage contrôlé de l'app Node.
 
 ## Endpoints principaux
 

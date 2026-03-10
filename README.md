@@ -153,22 +153,15 @@ npm run build
 
 Puis déployer le contenu de `frontend/dist` sur l'hébergement web (ex: o2switch).
 
-### Déploiement O2switch avec backup auto (recommandé)
+### Déploiement O2switch
 
-Un script de déploiement sécurisé est disponible:
+Le processus de déploiement et de backup de production est maintenu en scripts privés hors dépôt.
+Principes obligatoires:
 
-```bash
-bash scripts/o2switch/deploy-with-backup.sh
-```
-
-Ce script:
-
-- sauvegarde l'état backend (`data/state.json`) avant déploiement,
-- rapatrie la sauvegarde en local (hors git),
-- déploie frontend + backend,
-- préserve `backend/data` et `backend/.env`,
-- redémarre l'application Node.
-- réécrit `nexusforge.en-ligne.fr/.htaccess` pour garantir le fallback SPA (`/login`, `/sessions/...`) même après refresh F5.
+- backup de `backend/data/state.json` avant chaque mise à jour,
+- stockage local des backups hors git,
+- préservation de `backend/data` et `backend/.env` pendant la synchro,
+- fallback SPA `.htaccess` conservé côté frontend.
 
 ### Backend inclus dans ce repo
 

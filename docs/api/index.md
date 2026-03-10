@@ -2,7 +2,7 @@
 
 - Backend MVP (endpoints existants): [`backend-mvp.md`](./backend-mvp.md)
 - Sync offline-first: [`sync-actions.md`](./sync-actions.md)
-- Déploiement + backup O2switch: `scripts/o2switch/deploy-with-backup.sh`
+- Déploiement + backup production: procédure privée hors dépôt
 
 ## Couverture actuelle côté frontend
 
