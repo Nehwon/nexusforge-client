@@ -22,11 +22,13 @@ type PaletteItem = {
   options?: string[];
 };
 
+type ButtonScriptTemplate = { id: string; label: string; script: string };
+
 const STUDIO_LEFT_WIDTH_KEY = 'nexusforge.studio.leftWidth';
 const STUDIO_RIGHT_WIDTH_KEY = 'nexusforge.studio.rightWidth';
 const STUDIO_FULLSCREEN_KEY = 'nexusforge.studio.fullscreen';
 
-const BUTTON_SCRIPT_TEMPLATES: Array<{ id: string; label: string; script: string }> = [
+const BUTTON_SCRIPT_TEMPLATES: ButtonScriptTemplate[] = [
   {
     id: 'damage-basic',
     label: 'Degats de base',
@@ -68,6 +70,10 @@ const BUTTON_SCRIPT_TEMPLATES: Array<{ id: string; label: string; script: string
     script: 'ADD charges -1\nIF @charges <= 0\nSET item_vide = 1\nENDIF'
   }
 ];
+
+function customTemplateStorageKey(userId: string): string {
+  return `nexusforge.customScriptTemplates:${userId}`;
+}
 
 const PALETTE_TREE: Array<{ id: string; label: string; items: PaletteItem[] }> = [
   {
@@ -488,6 +494,8 @@ export default function SystemStudioPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [selectedButtonTemplateId, setSelectedButtonTemplateId] = useState('');
+  const [customButtonTemplates, setCustomButtonTemplates] = useState<ButtonScriptTemplate[]>([]);
+  const [newTemplateName, setNewTemplateName] = useState('');
   const lastSavedSchemaRef = useRef<string>('');
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
@@ -505,6 +513,10 @@ export default function SystemStudioPage() {
     }
     return selectedView.components.find((component) => component.id === selectedComponentId) ?? null;
   }, [selectedComponentId, selectedView]);
+  const allButtonTemplates = useMemo<ButtonScriptTemplate[]>(
+    () => [...BUTTON_SCRIPT_TEMPLATES, ...customButtonTemplates],
+    [customButtonTemplates]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -584,6 +596,41 @@ export default function SystemStudioPage() {
   useEffect(() => {
     setSelectedButtonTemplateId('');
   }, [selectedComponentId]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setCustomButtonTemplates([]);
+      return;
+    }
+    const raw = localStorage.getItem(customTemplateStorageKey(currentUser.id));
+    if (!raw) {
+      setCustomButtonTemplates([]);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) {
+        setCustomButtonTemplates([]);
+        return;
+      }
+      const templates = parsed
+        .filter(
+          (item): item is ButtonScriptTemplate =>
+            item && typeof item.id === 'string' && typeof item.label === 'string' && typeof item.script === 'string'
+        )
+        .slice(0, 100);
+      setCustomButtonTemplates(templates);
+    } catch {
+      setCustomButtonTemplates([]);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      return;
+    }
+    localStorage.setItem(customTemplateStorageKey(currentUser.id), JSON.stringify(customButtonTemplates));
+  }, [currentUser?.id, customButtonTemplates]);
 
   const updateSchema = (update: (current: StudioSchema) => StudioSchema) => {
     setSchema((current) => {
@@ -869,7 +916,7 @@ export default function SystemStudioPage() {
     if (!selectedComponent || selectedComponent.type !== 'button' || !selectedButtonTemplateId) {
       return;
     }
-    const template = BUTTON_SCRIPT_TEMPLATES.find((item) => item.id === selectedButtonTemplateId);
+    const template = allButtonTemplates.find((item) => item.id === selectedButtonTemplateId);
     if (!template) {
       return;
     }
@@ -879,6 +926,46 @@ export default function SystemStudioPage() {
     }));
     setSelectedButtonTemplateId('');
     setStatusMessage(`Template applique: ${template.label}`);
+  };
+
+  const saveCustomTemplateFromCurrentButton = () => {
+    if (!selectedComponent || selectedComponent.type !== 'button') {
+      return;
+    }
+    const name = newTemplateName.trim();
+    const script = (selectedComponent.actionScript ?? '').trim();
+    if (!name) {
+      setErrorMessage('Nom du template requis.');
+      return;
+    }
+    if (!script) {
+      setErrorMessage('Le script du bouton est vide.');
+      return;
+    }
+    const template: ButtonScriptTemplate = {
+      id: makeId('tpl'),
+      label: name,
+      script
+    };
+    setCustomButtonTemplates((previous) => [template, ...previous]);
+    setNewTemplateName('');
+    setStatusMessage(`Template personnalise enregistre: ${name}`);
+    setErrorMessage(null);
+  };
+
+  const deleteSelectedCustomTemplate = () => {
+    if (!selectedButtonTemplateId) {
+      return;
+    }
+    const template = customButtonTemplates.find((item) => item.id === selectedButtonTemplateId);
+    if (!template) {
+      setErrorMessage('Ce template est systeme et ne peut pas etre supprime.');
+      return;
+    }
+    setCustomButtonTemplates((previous) => previous.filter((item) => item.id !== selectedButtonTemplateId));
+    setSelectedButtonTemplateId('');
+    setStatusMessage(`Template supprime: ${template.label}`);
+    setErrorMessage(null);
   };
 
   return (
@@ -1247,14 +1334,25 @@ export default function SystemStudioPage() {
                             disabled={!canEdit}
                           >
                             <option value="">Choisir un template</option>
-                            {BUTTON_SCRIPT_TEMPLATES.map((template) => (
-                              <option key={template.id} value={template.id}>
-                                {template.label}
-                              </option>
-                            ))}
+                            <optgroup label="Systeme">
+                              {BUTTON_SCRIPT_TEMPLATES.map((template) => (
+                                <option key={template.id} value={template.id}>
+                                  {template.label}
+                                </option>
+                              ))}
+                            </optgroup>
+                            {customButtonTemplates.length > 0 ? (
+                              <optgroup label="Personnalises">
+                                {customButtonTemplates.map((template) => (
+                                  <option key={template.id} value={template.id}>
+                                    {template.label}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ) : null}
                           </select>
                         </label>
-                        <div>
+                        <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
                           <Button
                             type="button"
                             variant="secondary"
@@ -1262,6 +1360,34 @@ export default function SystemStudioPage() {
                             disabled={!canEdit || !selectedButtonTemplateId}
                           >
                             Appliquer template
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={deleteSelectedCustomTemplate}
+                            disabled={!canEdit || !customButtonTemplates.some((item) => item.id === selectedButtonTemplateId)}
+                          >
+                            Supprimer template
+                          </Button>
+                        </div>
+                        <label>
+                          <span>Nouveau template (nom)</span>
+                          <input
+                            type="text"
+                            value={newTemplateName}
+                            onChange={(event) => setNewTemplateName(event.target.value)}
+                            disabled={!canEdit}
+                            placeholder="Ex: Degats critiques"
+                          />
+                        </label>
+                        <div>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={saveCustomTemplateFromCurrentButton}
+                            disabled={!canEdit || !newTemplateName.trim() || !(selectedComponent.actionScript ?? '').trim()}
+                          >
+                            Enregistrer comme template perso
                           </Button>
                         </div>
                         <label>
