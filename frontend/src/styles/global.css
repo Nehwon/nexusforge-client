@@ -294,6 +294,29 @@ body.theme-dark .chat-channel-item {
   color: #e5e7eb;
 }
 
+body.theme-dark .dashboard-studio__panel {
+  border-color: #334155;
+  background: #111827;
+}
+
+body.theme-dark .dashboard-studio__canvas {
+  border-color: #475569;
+  background: #0f172a;
+}
+
+body.theme-dark .dashboard-studio__module-card {
+  border-color: #334155;
+  background: #111827;
+}
+
+body.theme-dark .dashboard-studio__module-card.is-selected {
+  border-color: #3b82f6;
+}
+
+body.theme-dark .dashboard-studio__module-card.is-drop-target {
+  background: #1e293b;
+}
+
 @media (max-width: 820px) {
   .top-nav__inner {
     flex-wrap: wrap;
@@ -399,6 +422,77 @@ body.theme-dark .chat-channel-item {
   display: inline-flex;
   gap: 0.45rem;
   align-items: center;
+}
+
+.dashboard-studio {
+  margin-bottom: 1rem;
+  display: grid;
+  grid-template-columns: minmax(220px, 270px) minmax(0, 1fr) minmax(240px, 290px);
+  gap: 0.75rem;
+}
+
+.dashboard-studio__panel {
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 0.65rem;
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+}
+
+.dashboard-studio__palette {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.dashboard-studio__palette .button.is-active {
+  border-color: #155eef;
+  box-shadow: 0 0 0 1px rgba(21, 94, 239, 0.2);
+}
+
+.dashboard-studio__canvas {
+  border: 1px dashed #d0d5dd;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.5rem;
+  min-height: 220px;
+}
+
+.dashboard-studio__module-card {
+  border: 2px solid #d0d5dd;
+  border-radius: 10px;
+  background: #f9fbff;
+  padding: 0.5rem 0.55rem;
+  display: grid;
+  gap: 0.2rem;
+  cursor: grab;
+}
+
+.dashboard-studio__module-card.is-selected {
+  border-color: #155eef;
+  box-shadow: 0 0 0 2px rgba(21, 94, 239, 0.14);
+}
+
+.dashboard-studio__module-card.is-drop-target {
+  border-color: #155eef;
+  background: #eef4ff;
+}
+
+.dashboard-studio__module-card.is-hidden {
+  opacity: 0.64;
+}
+
+.dashboard-studio__properties {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.dashboard-studio__properties label {
+  display: grid;
+  gap: 0.35rem;
 }
 
 .sync-status-panel {
@@ -1262,5 +1356,9 @@ body.theme-dark .studio-splitter:hover {
 
   .studio-splitter {
     display: none;
+  }
+
+  .dashboard-studio {
+    grid-template-columns: 1fr;
   }
 }

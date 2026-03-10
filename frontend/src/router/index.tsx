@@ -8,6 +8,7 @@ import AccountSecurityPage from '../features/auth/pages/AccountSecurityPage';
 import AdminPendingUsersPage from '../features/auth/pages/AdminPendingUsersPage';
 import SessionsListPage from '../features/sessions/pages/SessionsListPage';
 import SessionViewPage from '../features/sessions/pages/SessionViewPage';
+import SessionDashboardStudioPage from '../features/sessions/pages/SessionDashboardStudioPage';
 import RulesStudioPage from '../features/systems/pages/RulesStudioPage';
 import SystemStudioPage from '../features/systems/pages/SystemStudioPage';
 import TranslationDictionaryPage from '../features/i18n/pages/TranslationDictionaryPage';
@@ -107,6 +108,14 @@ export const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <SessionViewPage />
+      </RequireAuth>
+    )
+  },
+  {
+    path: '/sessions/:sessionId/studio',
+    element: (
+      <RequireAuth>
+        <SessionDashboardStudioPage />
       </RequireAuth>
     )
   }

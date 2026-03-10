@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import Layout from '../../../components/Layout';
 import { useAuth } from '../../../hooks/useAuth';
 import { Session } from '../../../types/session';
@@ -8,23 +8,9 @@ import SystemCatalogPanel from '../components/SystemCatalogPanel';
 import PartyAdminPanel from '../components/PartyAdminPanel';
 import SyncConflictsPanel from '../components/SyncConflictsPanel';
 import SyncStatusPanel from '../components/SyncStatusPanel';
-import DashboardLayout, { WidgetConfig } from '../../dashboard/components/DashboardLayout';
+import DashboardLayout from '../../dashboard/components/DashboardLayout';
 import { sessionRepository } from '../../../data/repositories';
-
-const gmWidgets: WidgetConfig[] = [
-  { id: 'initiative', type: 'initiative', title: 'Initiative & Combat' },
-  { id: 'characters', type: 'character', title: 'Fiches' },
-  { id: 'chat', type: 'chat', title: 'Chat & Messages' },
-  { id: 'documents', type: 'documents', title: 'Documents' },
-  { id: 'notes', type: 'notes', title: 'Notes' }
-];
-
-const playerWidgets: WidgetConfig[] = [
-  { id: 'my-character', type: 'character', title: 'Mon personnage' },
-  { id: 'chat', type: 'chat', title: 'Chat & Messages' },
-  { id: 'documents', type: 'documents', title: 'Documents reçus' },
-  { id: 'notes', type: 'notes', title: 'Notes & Journal' }
-];
+import { gmWidgets, playerWidgets } from '../dashboardWidgets';
 
 export default function SessionViewPage() {
   const { sessionId = '' } = useParams();
@@ -97,6 +83,14 @@ export default function SessionViewPage() {
   return (
     <Layout>
       <SessionHeader sessionName={session.name} sessionState={session.state} role={role} />
+      <section className="card" style={{ marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <p style={{ margin: 0 }}>Personnalisation d ecran par compte et par role.</p>
+          <Link className="button secondary" to={`/sessions/${session.id}/studio?role=${role}`}>
+            Editer cet ecran (Studio)
+          </Link>
+        </div>
+      </section>
       <PartyAdminPanel session={session} currentUser={currentUser} onSessionChange={(nextSession) => setSession(nextSession)} />
       <SystemCatalogPanel
         currentUser={currentUser}

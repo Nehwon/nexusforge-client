@@ -22,6 +22,7 @@ type DashboardLayoutProps = {
   widgets: WidgetConfig[];
   currentUser: User;
   currentSession: Session;
+  studioMode?: boolean;
 };
 
 function renderWidget(type: WidgetConfig['type'], context: Omit<DashboardLayoutProps, 'widgets'>) {
@@ -91,12 +92,13 @@ function reorder(list: string[], sourceId: string, targetId: string): string[] {
   return next;
 }
 
-export default function DashboardLayout({ role, widgets, currentUser, currentSession }: DashboardLayoutProps) {
+export default function DashboardLayout({ role, widgets, currentUser, currentSession, studioMode = false }: DashboardLayoutProps) {
   const [profiles, setProfiles] = useState<DashboardProfile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
   const [dropTargetWidgetId, setDropTargetWidgetId] = useState<string | null>(null);
   const [profileNameDraft, setProfileNameDraft] = useState('');
@@ -174,6 +176,20 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
     setProfileNameDraft(selectedProfile?.name ?? '');
   }, [selectedProfile?.id, selectedProfile?.name]);
 
+  useEffect(() => {
+    if (!selectedProfile) {
+      setSelectedWidgetId(null);
+      return;
+    }
+    const existing = new Set(selectedProfile.widgetOrder);
+    setSelectedWidgetId((current) => {
+      if (current && existing.has(current)) {
+        return current;
+      }
+      return selectedProfile.widgetOrder[0] ?? null;
+    });
+  }, [selectedProfile?.id, selectedProfile?.widgetOrder]);
+
   const visibleWidgets = useMemo(() => {
     if (!selectedProfile) {
       return [];
@@ -219,6 +235,22 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
         ...selectedProfile.widgetSizes,
         [widgetId]: size
       }
+    });
+  };
+
+  const setWidgetVisibility = async (widgetId: string, visible: boolean) => {
+    if (!selectedProfile) {
+      return;
+    }
+    const hiddenSet = new Set(selectedProfile.hiddenWidgetIds);
+    if (visible) {
+      hiddenSet.delete(widgetId);
+    } else {
+      hiddenSet.add(widgetId);
+    }
+    await persistProfile({
+      ...selectedProfile,
+      hiddenWidgetIds: Array.from(hiddenSet)
     });
   };
 
@@ -293,6 +325,28 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
     await persistProfile({ ...selectedProfile, isFavorite: !selectedProfile.isFavorite });
   };
 
+  const handleSelectWidget = (widgetId: string) => {
+    setSelectedWidgetId(widgetId);
+  };
+
+  const moveSelectedWidget = async (direction: 'up' | 'down') => {
+    if (!selectedProfile || !selectedWidgetId) {
+      return;
+    }
+    const currentIndex = selectedProfile.widgetOrder.indexOf(selectedWidgetId);
+    if (currentIndex < 0) {
+      return;
+    }
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= selectedProfile.widgetOrder.length) {
+      return;
+    }
+    const order = [...selectedProfile.widgetOrder];
+    order.splice(currentIndex, 1);
+    order.splice(nextIndex, 0, selectedWidgetId);
+    await persistProfile({ ...selectedProfile, widgetOrder: order });
+  };
+
   if (isLoading) {
     return <section className="card">Chargement du dashboard...</section>;
   }
@@ -309,10 +363,17 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
     return <section className="card">Aucun profil dashboard disponible.</section>;
   }
 
+  const activeWidgetId = selectedWidgetId ?? selectedProfile.widgetOrder[0] ?? null;
+  const activeWidget = activeWidgetId ? widgetById[activeWidgetId] : null;
+  const activeIsVisible = activeWidgetId ? !selectedProfile.hiddenWidgetIds.includes(activeWidgetId) : false;
+  const effectiveEditing = studioMode ? true : isEditing;
+
   return (
     <section>
       <div className="card dashboard-toolbar">
-        <p style={{ marginTop: 0 }}>Dashboard {role === 'gm' ? 'MJ' : 'Joueur'} - profil par compte</p>
+        <p style={{ marginTop: 0 }}>
+          {studioMode ? 'Studio d ecran' : 'Dashboard'} {role === 'gm' ? 'MJ' : 'Joueur'} - profil par compte
+        </p>
         <div className="dashboard-toolbar__row">
           <label>
             <span style={{ marginRight: '0.4rem' }}>Interface</span>
@@ -361,12 +422,14 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
           <button className="button secondary" type="button" onClick={() => void handleDeleteProfile()} disabled={profiles.length <= 1}>
             Supprimer
           </button>
-          <button className="button" type="button" onClick={() => setIsEditing((value) => !value)}>
-            {isEditing ? 'Fermer edition' : 'Editer modules'}
-          </button>
+          {!studioMode ? (
+            <button className="button" type="button" onClick={() => setIsEditing((value) => !value)}>
+              {isEditing ? 'Fermer edition' : 'Editer modules'}
+            </button>
+          ) : null}
         </div>
 
-        {isEditing ? (
+        {!studioMode && isEditing ? (
           <div className="dashboard-editor">
             <p style={{ margin: 0 }}>
               Active ou masque les modules, ajuste leur taille, puis glisse-depose les cartes dans la grille pour les repositionner.
@@ -409,16 +472,150 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
         ) : null}
       </div>
 
+      {studioMode ? (
+        <section className="dashboard-studio card">
+          <aside className="dashboard-studio__panel">
+            <h3 style={{ marginTop: 0 }}>Palette modules</h3>
+            <p style={{ marginTop: 0, fontSize: '0.9rem' }}>Affiche/masque les modules et clique pour editer leurs proprietes.</p>
+            <div className="dashboard-studio__palette">
+              {widgets.map((widget) => {
+                const isVisible = !selectedProfile.hiddenWidgetIds.includes(widget.id);
+                return (
+                  <button
+                    key={`palette-${widget.id}`}
+                    className={`button secondary ${activeWidgetId === widget.id ? 'is-active' : ''}`}
+                    type="button"
+                    onClick={() => {
+                      handleSelectWidget(widget.id);
+                    }}
+                    style={{ textAlign: 'left' }}
+                  >
+                    {widget.title} {isVisible ? '●' : '○'}
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+
+          <section className="dashboard-studio__panel">
+            <h3 style={{ marginTop: 0 }}>Canvas des modules</h3>
+            <p style={{ marginTop: 0, fontSize: '0.9rem' }}>Glisse-depose pour reordonner. Clique une carte pour la configurer.</p>
+            <div className="dashboard-studio__canvas">
+              {selectedProfile.widgetOrder.map((widgetId) => {
+                const widget = widgetById[widgetId];
+                if (!widget) {
+                  return null;
+                }
+                const size = selectedProfile.widgetSizes[widget.id] ?? 'medium';
+                const hidden = selectedProfile.hiddenWidgetIds.includes(widget.id);
+                return (
+                  <article
+                    key={`studio-order-${widget.id}`}
+                    className={`dashboard-studio__module-card ${activeWidgetId === widget.id ? 'is-selected' : ''} ${
+                      dropTargetWidgetId === widget.id ? 'is-drop-target' : ''
+                    } ${hidden ? 'is-hidden' : ''}`}
+                    draggable
+                    onClick={() => handleSelectWidget(widget.id)}
+                    onDragStart={() => {
+                      setDraggedWidgetId(widget.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedWidgetId(null);
+                      setDropTargetWidgetId(null);
+                    }}
+                    onDragEnter={() => {
+                      if (!draggedWidgetId || draggedWidgetId === widget.id) {
+                        return;
+                      }
+                      setDropTargetWidgetId(widget.id);
+                    }}
+                    onDragLeave={() => {
+                      if (dropTargetWidgetId === widget.id) {
+                        setDropTargetWidgetId(null);
+                      }
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      if (draggedWidgetId && draggedWidgetId !== widget.id) {
+                        setDropTargetWidgetId(widget.id);
+                      }
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      void handleDrop(widget.id);
+                    }}
+                  >
+                    <strong>{widget.title}</strong>
+                    <small>ID: {widget.id}</small>
+                    <small>Etat: {hidden ? 'Masque' : 'Visible'}</small>
+                    <small>Taille: {size.toUpperCase()}</small>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <aside className="dashboard-studio__panel">
+            <h3 style={{ marginTop: 0 }}>Proprietes</h3>
+            {!activeWidget ? (
+              <p style={{ margin: 0 }}>Selectionne un module.</p>
+            ) : (
+              <div className="dashboard-studio__properties">
+                <p style={{ margin: 0 }}>
+                  Module: <strong>{activeWidget.title}</strong>
+                </p>
+                <p style={{ margin: 0 }}>
+                  Technique: <code>{activeWidget.id}</code>
+                </p>
+                <label>
+                  <span>Visible</span>
+                  <select
+                    value={String(activeIsVisible)}
+                    onChange={(event) => {
+                      void setWidgetVisibility(activeWidget.id, event.target.value === 'true');
+                    }}
+                  >
+                    <option value="true">Oui</option>
+                    <option value="false">Non</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Taille</span>
+                  <select
+                    value={selectedProfile.widgetSizes[activeWidget.id] ?? 'medium'}
+                    onChange={(event) => {
+                      void handleWidgetSize(activeWidget.id, event.target.value as DashboardWidgetSize);
+                    }}
+                  >
+                    <option value="small">Taille S</option>
+                    <option value="medium">Taille M</option>
+                    <option value="large">Taille L</option>
+                  </select>
+                </label>
+                <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                  <button className="button secondary" type="button" onClick={() => void moveSelectedWidget('up')}>
+                    Monter
+                  </button>
+                  <button className="button secondary" type="button" onClick={() => void moveSelectedWidget('down')}>
+                    Descendre
+                  </button>
+                </div>
+              </div>
+            )}
+          </aside>
+        </section>
+      ) : null}
+
       <div className="widgets-grid">
         {visibleWidgets.map((widget) => {
           const size = selectedProfile.widgetSizes[widget.id] ?? 'medium';
           return (
             <div
               key={widget.id}
-              className={`dashboard-widget dashboard-widget--${size} ${isEditing ? 'is-editing' : ''} ${
+              className={`dashboard-widget dashboard-widget--${size} ${effectiveEditing ? 'is-editing' : ''} ${
                 dropTargetWidgetId === widget.id ? 'is-drop-target' : ''
               }`}
-              draggable={isEditing}
+              draggable={effectiveEditing}
               onDragStart={() => {
                 setDraggedWidgetId(widget.id);
               }}
@@ -427,7 +624,7 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
                 setDropTargetWidgetId(null);
               }}
               onDragEnter={() => {
-                if (!isEditing || !draggedWidgetId || draggedWidgetId === widget.id) {
+                if (!effectiveEditing || !draggedWidgetId || draggedWidgetId === widget.id) {
                   return;
                 }
                 setDropTargetWidgetId(widget.id);
@@ -438,7 +635,7 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
                 }
               }}
               onDragOver={(event) => {
-                if (!isEditing) {
+                if (!effectiveEditing) {
                   return;
                 }
                 event.preventDefault();
@@ -447,7 +644,7 @@ export default function DashboardLayout({ role, widgets, currentUser, currentSes
                 }
               }}
               onDrop={(event) => {
-                if (!isEditing) {
+                if (!effectiveEditing) {
                   return;
                 }
                 event.preventDefault();
