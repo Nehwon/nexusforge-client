@@ -13,6 +13,9 @@ Le principe est unique partout: blocs visuels imbriques + drag&drop.
 
 Dans le studio systeme, un menu rapide est disponible en haut:
 
+- `Accueil`
+- `Parties`
+- `Atelier`
 - `Palette`
 - `Zone centrale`
 - `Proprietes`
@@ -87,6 +90,39 @@ Le convertisseur:
 - tente de retrouver les labels via `label[for]`, `aria-label`, `placeholder`, `name`, `id`,
 - supprime automatiquement les wrappers HTML generiques inutiles (ex: `div/section` techniques),
 - ajoute les blocs à la fin de la vue active.
+
+## Catalogue composants (palette gauche)
+
+- Champs de base: `text`, `textarea`, `number`, `checkbox`, `choice`, `range`
+- Champs avances: `color`, `date`, `time`, `avatar`
+- Affichage / actions: `label`, `icon`, `button`
+- Layout / structure: `container`, `row`, `column`, `tabs`, `tabs_nested`, `view`, `repeater`
+- Logique visuelle: `logic_if`, `logic_then`, `logic_else`, `logic_or`, `logic_not`
+- JDR: `dice_roll`, `table`, `inventory`, `relation`
+
+## Proprietes (approche legere)
+
+Proprietes communes:
+
+- `label`, `key`, `placeholder`
+- `reference`, `formula`, `showIf`
+- `required`, `validationPattern`, `validationMessage`
+
+Proprietes specifiquees selon type:
+
+- `options` (`choice`, `tabs`, `tabs_nested`, `repeater`)
+- `min/max/step` (`number`, `range`)
+- `columns` (`table`, `inventory`)
+- `diceFormula` (`dice_roll`)
+- `relationTarget`, `allowMultiple` (`relation`)
+- `actionScript` (`button`)
+
+Proprietes visuelles generiques (sans alourdir):
+
+- `Afficher la bordure` (oui/non)
+- `Couleur de fond` (optionnelle)
+
+Ces proprietes visuelles sont limitees aux conteneurs/structures pour garder le studio simple.
 
 ## Onglet "Tableau des champs"
 

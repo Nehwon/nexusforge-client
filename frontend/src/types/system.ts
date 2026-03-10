@@ -104,6 +104,8 @@ export interface StudioComponentDefinition {
   actionScript?: string;
   reference?: string;
   formula?: string;
+  hideBorder?: boolean;
+  backgroundColor?: string;
 }
 
 export interface StudioViewDefinition {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { characterRepository, systemRepository } from '../../../data/repositories';
 import { applyRulesProgramToSheet, rollForAction } from '../../../services/systemRulesEngine';
 import { sendSystemMessage } from '../../../stores/chatStore';
@@ -392,6 +392,18 @@ function executeButtonScript(
   }
 
   return { nextValues, messages };
+}
+
+function runtimeContainerStyle(component: StudioComponent): CSSProperties | undefined {
+  const style: CSSProperties = {};
+  if (component.hideBorder) {
+    style.border = 'none';
+    style.boxShadow = 'none';
+  }
+  if (component.backgroundColor?.trim()) {
+    style.background = component.backgroundColor.trim();
+  }
+  return Object.keys(style).length > 0 ? style : undefined;
 }
 
 export default function CharacterWidget({ currentUser, currentSession, role }: CharacterWidgetProps) {
@@ -826,7 +838,15 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
       return renderStudioRuntimeField(component);
     }
 
-    return <div key={`studio-runtime-node-${component.id}`} className={`studio-runtime-children type-${component.type}`}>{renderedChildren}</div>;
+    return (
+      <div
+        key={`studio-runtime-node-${component.id}`}
+        className={`studio-runtime-children type-${component.type}`}
+        style={runtimeContainerStyle(component)}
+      >
+        {renderedChildren}
+      </div>
+    );
   };
 
   return (

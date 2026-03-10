@@ -1,4 +1,4 @@
-import { DragEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { CSSProperties, DragEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Layout from '../../../components/Layout';
 import Button from '../../../components/Button';
@@ -186,7 +186,9 @@ function createComponentFromPalette(item: PaletteItem): StudioComponentDefinitio
     allowMultiple: item.type === 'relation' ? false : undefined,
     actionScript: item.type === 'button' ? '' : undefined,
     reference: '',
-    formula: ''
+    formula: '',
+    hideBorder: false,
+    backgroundColor: ''
   };
 }
 
@@ -422,7 +424,9 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
       allowMultiple: type === 'relation' ? false : undefined,
       actionScript: type === 'button' ? '' : undefined,
       reference: '',
-      formula: ''
+      formula: '',
+      hideBorder: false,
+      backgroundColor: ''
     };
     components.push(component);
     return component;
@@ -957,6 +961,18 @@ function renderComponentPreview(component: StudioComponentDefinition): JSX.Eleme
     );
   }
   return <input type={component.type === 'number' ? 'number' : 'text'} disabled placeholder={component.placeholder || component.label} />;
+}
+
+function runtimeContainerStyle(component: StudioComponentDefinition): CSSProperties | undefined {
+  const style: CSSProperties = {};
+  if (component.hideBorder) {
+    style.border = 'none';
+    style.boxShadow = 'none';
+  }
+  if (component.backgroundColor?.trim()) {
+    style.background = component.backgroundColor.trim();
+  }
+  return Object.keys(style).length > 0 ? style : undefined;
 }
 
 export default function SystemStudioPage() {
@@ -1882,7 +1898,15 @@ export default function SystemStudioPage() {
       return renderRuntimeField(component);
     }
 
-    return <div key={`runtime-node-${component.id}`} className={`studio-runtime-children type-${component.type}`}>{renderedChildren}</div>;
+    return (
+      <div
+        key={`runtime-node-${component.id}`}
+        className={`studio-runtime-children type-${component.type}`}
+        style={runtimeContainerStyle(component)}
+      >
+        {renderedChildren}
+      </div>
+    );
   };
 
   const runScriptTester = () => {
@@ -2073,6 +2097,9 @@ export default function SystemStudioPage() {
               </div>
             </div>
             <nav className="studio-quick-nav" aria-label="Navigation studio">
+              <Link to="/">Accueil</Link>
+              <Link to="/sessions">Parties</Link>
+              <Link to="/systems">Atelier</Link>
               <a href="#studio-left-panel">Palette</a>
               <a href="#studio-center-panel">Zone centrale</a>
               <a href="#studio-right-panel">Proprietes</a>
@@ -2411,6 +2438,56 @@ export default function SystemStudioPage() {
                         placeholder="@niveau >= 5 && @classe == 'mage'"
                       />
                     </label>
+                    {isStructuralType(selectedComponent.type) || selectedComponent.type === 'table' || selectedComponent.type === 'inventory' ? (
+                      <>
+                        <label>
+                          <span>Afficher la bordure</span>
+                          <select
+                            value={String(!selectedComponent.hideBorder)}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({
+                                ...item,
+                                hideBorder: event.target.value !== 'true'
+                              }))
+                            }
+                            disabled={!canEdit}
+                          >
+                            <option value="true">Oui</option>
+                            <option value="false">Non</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span>Couleur de fond (optionnel)</span>
+                          <input
+                            type="color"
+                            value={selectedComponent.backgroundColor?.trim() || '#0f172a'}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({
+                                ...item,
+                                backgroundColor: event.target.value
+                              }))
+                            }
+                            disabled={!canEdit}
+                          />
+                        </label>
+                        <label>
+                          <span>Ou vider la couleur de fond</span>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() =>
+                              updateSelectedComponent((item) => ({
+                                ...item,
+                                backgroundColor: ''
+                              }))
+                            }
+                            disabled={!canEdit || !(selectedComponent.backgroundColor ?? '').trim()}
+                          >
+                            Supprimer couleur
+                          </Button>
+                        </label>
+                      </>
+                    ) : null}
                     <label>
                       <span>Validation regex</span>
                       <input
