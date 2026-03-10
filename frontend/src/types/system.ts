@@ -50,7 +50,26 @@ export interface RulesPresentation {
   groups: RulesPresentationGroup[];
 }
 
-export type StudioComponentType = 'text' | 'number' | 'checkbox' | 'button';
+export type StudioComponentType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'checkbox'
+  | 'choice'
+  | 'color'
+  | 'date'
+  | 'time'
+  | 'range'
+  | 'avatar'
+  | 'label'
+  | 'icon'
+  | 'button'
+  | 'container'
+  | 'row'
+  | 'column'
+  | 'tabs'
+  | 'view'
+  | 'repeater';
 
 export interface StudioComponentDefinition {
   id: string;
@@ -58,6 +77,12 @@ export interface StudioComponentDefinition {
   label: string;
   key: string;
   defaultValue?: string | number | boolean;
+  placeholder?: string;
+  options?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+  required?: boolean;
   reference?: string;
   formula?: string;
 }

@@ -1,4 +1,4 @@
-import { DragEvent, useEffect, useMemo, useState } from 'react';
+import { DragEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Layout from '../../../components/Layout';
 import Button from '../../../components/Button';
@@ -15,21 +15,50 @@ import {
 const PALETTE_TREE: Array<{
   id: string;
   label: string;
-  items: Array<{ type: StudioComponentType; label: string; defaultValue?: string | number | boolean }>;
+  items: Array<{ type: StudioComponentType; label: string; defaultValue?: string | number | boolean; options?: string[] }>;
 }> = [
   {
-    id: 'inputs',
-    label: 'Champs',
+    id: 'basic-inputs',
+    label: 'Champs de base',
     items: [
       { type: 'text', label: 'Texte', defaultValue: '' },
+      { type: 'textarea', label: 'Texte multi-ligne', defaultValue: '' },
       { type: 'number', label: 'Nombre', defaultValue: 0 },
-      { type: 'checkbox', label: 'Case à cocher', defaultValue: false }
+      { type: 'checkbox', label: 'Case à cocher', defaultValue: false },
+      { type: 'choice', label: 'Choix (liste)', options: ['Option A', 'Option B'] },
+      { type: 'range', label: 'Jauge (range)', defaultValue: 0 }
     ]
   },
   {
-    id: 'actions',
-    label: 'Actions',
-    items: [{ type: 'button', label: 'Bouton', defaultValue: '' }]
+    id: 'advanced-inputs',
+    label: 'Champs avancés',
+    items: [
+      { type: 'color', label: 'Couleur', defaultValue: '#ffffff' },
+      { type: 'date', label: 'Date' },
+      { type: 'time', label: 'Heure' },
+      { type: 'avatar', label: 'Avatar / image' }
+    ]
+  },
+  {
+    id: 'display-actions',
+    label: 'Affichage / actions',
+    items: [
+      { type: 'label', label: 'Label / texte statique', defaultValue: 'Titre de section' },
+      { type: 'icon', label: 'Icône' },
+      { type: 'button', label: 'Bouton', defaultValue: 'Action' }
+    ]
+  },
+  {
+    id: 'layout',
+    label: 'Layout / structure',
+    items: [
+      { type: 'container', label: 'Container / groupe' },
+      { type: 'row', label: 'Ligne' },
+      { type: 'column', label: 'Colonne' },
+      { type: 'tabs', label: 'Onglets', options: ['Vue 1', 'Vue 2'] },
+      { type: 'view', label: 'Bloc vue' },
+      { type: 'repeater', label: 'Liste répétable', options: ['Ligne 1'] }
+    ]
   }
 ];
 
@@ -58,13 +87,24 @@ function ensureSchema(system: GameSystem): StudioSchema {
   };
 }
 
-function createComponentFromPalette(type: StudioComponentType, label: string, defaultValue?: string | number | boolean): StudioComponentDefinition {
+function createComponentFromPalette(
+  type: StudioComponentType,
+  label: string,
+  defaultValue?: string | number | boolean,
+  options?: string[]
+): StudioComponentDefinition {
   return {
     id: makeId('cmp'),
     type,
     label,
     key: `${type}_${Math.random().toString(36).slice(2, 6)}`,
     defaultValue,
+    placeholder: '',
+    options,
+    min: type === 'range' ? 0 : undefined,
+    max: type === 'range' ? 100 : undefined,
+    step: type === 'range' ? 1 : undefined,
+    required: false,
     reference: '',
     formula: ''
   };
@@ -73,6 +113,7 @@ function createComponentFromPalette(type: StudioComponentType, label: string, de
 export default function SystemStudioPage() {
   const { currentUser } = useAuth();
   const { systemId } = useParams();
+  const studioLayoutRef = useRef<HTMLElement | null>(null);
   const [system, setSystem] = useState<GameSystem | null>(null);
   const [schema, setSchema] = useState<StudioSchema | null>(null);
   const [selectedViewId, setSelectedViewId] = useState('');
@@ -80,6 +121,9 @@ export default function SystemStudioPage() {
   const [dragOverComponentId, setDragOverComponentId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(290);
+  const [rightPanelWidth, setRightPanelWidth] = useState(330);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -161,7 +205,41 @@ export default function SystemStudioPage() {
     }));
   };
 
-  const handlePaletteDragStart = (event: DragEvent<HTMLElement>, item: { type: StudioComponentType; label: string; defaultValue?: string | number | boolean }) => {
+  const startResizing = (side: 'left' | 'right', event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startLeft = leftPanelWidth;
+    const startRight = rightPanelWidth;
+
+    const onMouseMove = (moveEvent: globalThis.MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const containerWidth = studioLayoutRef.current?.clientWidth ?? window.innerWidth;
+      const minPanel = 220;
+      const maxLeft = Math.max(minPanel, containerWidth - rightPanelWidth - 460);
+      const maxRight = Math.max(minPanel, containerWidth - leftPanelWidth - 460);
+
+      if (side === 'left') {
+        const nextLeft = Math.min(Math.max(minPanel, startLeft + deltaX), maxLeft);
+        setLeftPanelWidth(nextLeft);
+      } else {
+        const nextRight = Math.min(Math.max(minPanel, startRight - deltaX), maxRight);
+        setRightPanelWidth(nextRight);
+      }
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const handlePaletteDragStart = (
+    event: DragEvent<HTMLElement>,
+    item: { type: StudioComponentType; label: string; defaultValue?: string | number | boolean; options?: string[] }
+  ) => {
     event.dataTransfer.setData('application/nexusforge-palette', JSON.stringify(item));
     event.dataTransfer.effectAllowed = 'copy';
   };
@@ -201,8 +279,13 @@ export default function SystemStudioPage() {
     const paletteRaw = event.dataTransfer.getData('application/nexusforge-palette');
     if (paletteRaw) {
       try {
-        const paletteItem = JSON.parse(paletteRaw) as { type: StudioComponentType; label: string; defaultValue?: string | number | boolean };
-        const created = createComponentFromPalette(paletteItem.type, paletteItem.label, paletteItem.defaultValue);
+        const paletteItem = JSON.parse(paletteRaw) as {
+          type: StudioComponentType;
+          label: string;
+          defaultValue?: string | number | boolean;
+          options?: string[];
+        };
+        const created = createComponentFromPalette(paletteItem.type, paletteItem.label, paletteItem.defaultValue, paletteItem.options);
         updateSelectedView((view) => ({
           ...view,
           components: [...view.components, created]
@@ -251,8 +334,13 @@ export default function SystemStudioPage() {
     }
 
     try {
-      const paletteItem = JSON.parse(paletteRaw) as { type: StudioComponentType; label: string; defaultValue?: string | number | boolean };
-      const created = createComponentFromPalette(paletteItem.type, paletteItem.label, paletteItem.defaultValue);
+      const paletteItem = JSON.parse(paletteRaw) as {
+        type: StudioComponentType;
+        label: string;
+        defaultValue?: string | number | boolean;
+        options?: string[];
+      };
+      const created = createComponentFromPalette(paletteItem.type, paletteItem.label, paletteItem.defaultValue, paletteItem.options);
       const components = [...selectedView.components];
       const targetIndex = components.findIndex((component) => component.id === targetComponentId);
       const insertionIndex = targetIndex >= 0 ? targetIndex : components.length;
@@ -345,8 +433,13 @@ export default function SystemStudioPage() {
     }
   };
 
+  const layoutStyle =
+    typeof window !== 'undefined' && window.innerWidth > 900
+      ? { gridTemplateColumns: `${leftPanelWidth}px 8px minmax(420px, 1fr) 8px ${rightPanelWidth}px` }
+      : undefined;
+
   return (
-    <Layout>
+    <Layout wide>
       {isLoading ? (
         <section className="card">Chargement du studio...</section>
       ) : (
@@ -360,6 +453,9 @@ export default function SystemStudioPage() {
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <Button type="button" variant="secondary" onClick={() => setIsFullscreen((current) => !current)}>
+                  {isFullscreen ? 'Quitter plein écran studio' : 'Plein écran studio'}
+                </Button>
                 <Button type="button" onClick={() => void saveStudio()} disabled={!canEdit || isSaving}>
                   {isSaving ? 'Sauvegarde...' : 'Sauvegarder'}
                 </Button>
@@ -370,246 +466,345 @@ export default function SystemStudioPage() {
             {errorMessage ? <p style={{ marginBottom: 0, color: '#b42318' }}>{errorMessage}</p> : null}
           </section>
 
-          <section className="studio-layout">
-            <aside className="studio-panel">
-              <h2 style={{ marginTop: 0 }}>Arborescence composants</h2>
-              <p style={{ marginTop: 0, fontSize: '0.9rem' }}>Glisse-dépose vers la vue centrale.</p>
-              <div className="studio-tree">
-                {PALETTE_TREE.map((branch) => (
-                  <details key={branch.id} open>
-                    <summary>{branch.label}</summary>
-                    <div className="studio-palette-list">
-                      {branch.items.map((item) => (
-                        <button
-                          key={`${branch.id}-${item.type}`}
-                          type="button"
-                          className="button secondary"
-                          draggable={canEdit}
-                          onDragStart={(event) => handlePaletteDragStart(event, item)}
-                          style={{ textAlign: 'left' }}
-                        >
-                          {item.label} ({item.type})
-                        </button>
-                      ))}
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </aside>
-
-            <section
-              className="studio-panel"
-              onDragOver={(event) => {
-                if (canEdit) {
-                  event.preventDefault();
-                }
-              }}
-              onDrop={handleCanvasDrop}
-            >
-              <h2 style={{ marginTop: 0 }}>Vue / fiche (zone centrale)</h2>
-              <div className="studio-views">
-                <label style={{ display: 'grid', gap: '0.35rem' }}>
-                  <span>Vue active</span>
-                  <select value={selectedView?.id ?? ''} onChange={(event) => setSelectedViewId(event.target.value)}>
-                    {(schema?.views ?? []).map((view) => (
-                      <option key={view.id} value={view.id}>
-                        {view.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <Button type="button" variant="secondary" onClick={addView} disabled={!canEdit}>
-                    + Vue
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={removeSelectedView} disabled={!canEdit || (schema?.views.length ?? 0) <= 1}>
-                    Supprimer vue
-                  </Button>
+          <section className={isFullscreen ? 'studio-fullscreen' : ''}>
+            <section ref={studioLayoutRef} className="studio-layout" style={layoutStyle}>
+              <aside className="studio-panel">
+                <h2 style={{ marginTop: 0 }}>Arborescence composants</h2>
+                <p style={{ marginTop: 0, fontSize: '0.9rem' }}>Glisse-dépose vers la vue centrale.</p>
+                <div className="studio-tree">
+                  {PALETTE_TREE.map((branch) => (
+                    <details key={branch.id} open>
+                      <summary>{branch.label}</summary>
+                      <div className="studio-palette-list">
+                        {branch.items.map((item) => (
+                          <button
+                            key={`${branch.id}-${item.type}`}
+                            type="button"
+                            className="button secondary"
+                            draggable={canEdit}
+                            onDragStart={(event) => handlePaletteDragStart(event, item)}
+                            style={{ textAlign: 'left' }}
+                          >
+                            {item.label} ({item.type})
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                  ))}
                 </div>
-              </div>
+              </aside>
 
-              <div className="studio-canvas">
-                {selectedView ? (
-                  <>
-                    <label style={{ display: 'grid', gap: '0.35rem', marginBottom: '0.75rem' }}>
-                      <span>Nom de la vue</span>
+              <div className="studio-splitter" onMouseDown={(event) => startResizing('left', event)} title="Redimensionner" />
+
+              <section
+                className="studio-panel"
+                onDragOver={(event) => {
+                  if (canEdit) {
+                    event.preventDefault();
+                  }
+                }}
+                onDrop={handleCanvasDrop}
+              >
+                <h2 style={{ marginTop: 0 }}>Vue / fiche (zone centrale)</h2>
+                <div className="studio-views">
+                  <label style={{ display: 'grid', gap: '0.35rem' }}>
+                    <span>Vue active</span>
+                    <select value={selectedView?.id ?? ''} onChange={(event) => setSelectedViewId(event.target.value)}>
+                      {(schema?.views ?? []).map((view) => (
+                        <option key={view.id} value={view.id}>
+                          {view.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <Button type="button" variant="secondary" onClick={addView} disabled={!canEdit}>
+                      + Vue
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={removeSelectedView} disabled={!canEdit || (schema?.views.length ?? 0) <= 1}>
+                      Supprimer vue
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="studio-canvas">
+                  {selectedView ? (
+                    <>
+                      <label style={{ display: 'grid', gap: '0.35rem', marginBottom: '0.75rem' }}>
+                        <span>Nom de la vue</span>
+                        <input
+                          type="text"
+                          value={selectedView.name}
+                          onChange={(event) =>
+                            updateSelectedView((view) => ({
+                              ...view,
+                              name: event.target.value
+                            }))
+                          }
+                          disabled={!canEdit}
+                        />
+                      </label>
+
+                      {selectedView.components.length === 0 ? (
+                        <p style={{ margin: 0 }}>Dépose un composant ici pour commencer.</p>
+                      ) : (
+                        <div className="studio-components-grid">
+                          {selectedView.components.map((component) => (
+                            <article
+                              key={component.id}
+                              className={`studio-component-card ${selectedComponentId === component.id ? 'is-selected' : ''} ${
+                                dragOverComponentId === component.id ? 'is-drag-over' : ''
+                              }`}
+                              draggable={canEdit}
+                              onDragStart={(event) => handleComponentDragStart(event, component.id)}
+                              onDragOver={(event) => {
+                                if (canEdit) {
+                                  event.preventDefault();
+                                  setDragOverComponentId(component.id);
+                                }
+                              }}
+                              onDragLeave={() => setDragOverComponentId((current) => (current === component.id ? null : current))}
+                              onDrop={(event) => handleComponentDrop(event, component.id)}
+                              onClick={() => setSelectedComponentId(component.id)}
+                            >
+                              <strong>{component.label || '(sans label)'}</strong>
+                              <span>Type: {component.type}</span>
+                              <span>Clé: {component.key}</span>
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p style={{ margin: 0 }}>Aucune vue disponible.</p>
+                  )}
+                </div>
+              </section>
+
+              <div className="studio-splitter" onMouseDown={(event) => startResizing('right', event)} title="Redimensionner" />
+
+              <aside className="studio-panel">
+                <h2 style={{ marginTop: 0 }}>Propriétés</h2>
+                {selectedComponent ? (
+                  <div className="studio-properties">
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                      Type: <strong>{selectedComponent.type}</strong>
+                    </p>
+                    <label>
+                      <span>Label</span>
                       <input
                         type="text"
-                        value={selectedView.name}
+                        value={selectedComponent.label}
                         onChange={(event) =>
-                          updateSelectedView((view) => ({
-                            ...view,
-                            name: event.target.value
+                          updateSelectedComponent((item) => ({
+                            ...item,
+                            label: event.target.value
                           }))
                         }
                         disabled={!canEdit}
                       />
                     </label>
-
-                    {selectedView.components.length === 0 ? (
-                      <p style={{ margin: 0 }}>Dépose un composant ici pour commencer.</p>
-                    ) : (
-                      <div className="studio-components-grid">
-                        {selectedView.components.map((component) => (
-                          <article
-                            key={component.id}
-                            className={`studio-component-card ${selectedComponentId === component.id ? 'is-selected' : ''} ${
-                              dragOverComponentId === component.id ? 'is-drag-over' : ''
-                            }`}
-                            draggable={canEdit}
-                            onDragStart={(event) => handleComponentDragStart(event, component.id)}
-                            onDragOver={(event) => {
-                              if (canEdit) {
-                                event.preventDefault();
-                                setDragOverComponentId(component.id);
-                              }
-                            }}
-                            onDragLeave={() => setDragOverComponentId((current) => (current === component.id ? null : current))}
-                            onDrop={(event) => handleComponentDrop(event, component.id)}
-                            onClick={() => setSelectedComponentId(component.id)}
-                          >
-                            <strong>{component.label || '(sans label)'}</strong>
-                            <span>Type: {component.type}</span>
-                            <span>Clé: {component.key}</span>
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <p style={{ margin: 0 }}>Aucune vue disponible.</p>
-                )}
-              </div>
-            </section>
-
-            <aside className="studio-panel">
-              <h2 style={{ marginTop: 0 }}>Propriétés</h2>
-              {selectedComponent ? (
-                <div className="studio-properties">
-                  <label>
-                    <span>Label</span>
-                    <input
-                      type="text"
-                      value={selectedComponent.label}
-                      onChange={(event) =>
-                        updateSelectedComponent((item) => ({
-                          ...item,
-                          label: event.target.value
-                        }))
-                      }
-                      disabled={!canEdit}
-                    />
-                  </label>
-                  <label>
-                    <span>Clé technique</span>
-                    <input
-                      type="text"
-                      value={selectedComponent.key}
-                      onChange={(event) =>
-                        updateSelectedComponent((item) => ({
-                          ...item,
-                          key: event.target.value
-                        }))
-                      }
-                      disabled={!canEdit}
-                    />
-                  </label>
-                  <label>
-                    <span>Référence (@champ)</span>
-                    <input
-                      type="text"
-                      value={selectedComponent.reference ?? ''}
-                      onChange={(event) =>
-                        updateSelectedComponent((item) => ({
-                          ...item,
-                          reference: event.target.value
-                        }))
-                      }
-                      disabled={!canEdit}
-                      placeholder="@force"
-                    />
-                  </label>
-                  <label>
-                    <span>Formule</span>
-                    <input
-                      type="text"
-                      value={selectedComponent.formula ?? ''}
-                      onChange={(event) =>
-                        updateSelectedComponent((item) => ({
-                          ...item,
-                          formula: event.target.value
-                        }))
-                      }
-                      disabled={!canEdit}
-                      placeholder="@force + @agilite"
-                    />
-                  </label>
-
-                  {selectedComponent.type === 'checkbox' ? (
                     <label>
-                      <span>Valeur par défaut</span>
-                      <select
-                        value={String(Boolean(selectedComponent.defaultValue))}
+                      <span>Clé technique</span>
+                      <input
+                        type="text"
+                        value={selectedComponent.key}
                         onChange={(event) =>
                           updateSelectedComponent((item) => ({
                             ...item,
-                            defaultValue: event.target.value === 'true'
+                            key: event.target.value
+                          }))
+                        }
+                        disabled={!canEdit}
+                      />
+                    </label>
+                    <label>
+                      <span>Placeholder</span>
+                      <input
+                        type="text"
+                        value={selectedComponent.placeholder ?? ''}
+                        onChange={(event) =>
+                          updateSelectedComponent((item) => ({
+                            ...item,
+                            placeholder: event.target.value
+                          }))
+                        }
+                        disabled={!canEdit}
+                      />
+                    </label>
+                    <label>
+                      <span>Référence (@champ)</span>
+                      <input
+                        type="text"
+                        value={selectedComponent.reference ?? ''}
+                        onChange={(event) =>
+                          updateSelectedComponent((item) => ({
+                            ...item,
+                            reference: event.target.value
+                          }))
+                        }
+                        disabled={!canEdit}
+                        placeholder="@force"
+                      />
+                    </label>
+                    <label>
+                      <span>Formule</span>
+                      <input
+                        type="text"
+                        value={selectedComponent.formula ?? ''}
+                        onChange={(event) =>
+                          updateSelectedComponent((item) => ({
+                            ...item,
+                            formula: event.target.value
+                          }))
+                        }
+                        disabled={!canEdit}
+                        placeholder="@force + @agilite"
+                      />
+                    </label>
+
+                    {(selectedComponent.type === 'choice' || selectedComponent.type === 'tabs' || selectedComponent.type === 'repeater') ? (
+                      <label>
+                        <span>Options (une par ligne)</span>
+                        <textarea
+                          rows={4}
+                          value={(selectedComponent.options ?? []).join('\n')}
+                          onChange={(event) =>
+                            updateSelectedComponent((item) => ({
+                              ...item,
+                              options: event.target.value
+                                .split('\n')
+                                .map((line) => line.trim())
+                                .filter(Boolean)
+                            }))
+                          }
+                          disabled={!canEdit}
+                        />
+                      </label>
+                    ) : null}
+
+                    {(selectedComponent.type === 'number' || selectedComponent.type === 'range') ? (
+                      <>
+                        <label>
+                          <span>Min</span>
+                          <input
+                            type="number"
+                            value={selectedComponent.min ?? 0}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({
+                                ...item,
+                                min: Number(event.target.value)
+                              }))
+                            }
+                            disabled={!canEdit}
+                          />
+                        </label>
+                        <label>
+                          <span>Max</span>
+                          <input
+                            type="number"
+                            value={selectedComponent.max ?? 100}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({
+                                ...item,
+                                max: Number(event.target.value)
+                              }))
+                            }
+                            disabled={!canEdit}
+                          />
+                        </label>
+                        <label>
+                          <span>Step</span>
+                          <input
+                            type="number"
+                            value={selectedComponent.step ?? 1}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({
+                                ...item,
+                                step: Number(event.target.value)
+                              }))
+                            }
+                            disabled={!canEdit}
+                          />
+                        </label>
+                      </>
+                    ) : null}
+
+                    {selectedComponent.type === 'checkbox' ? (
+                      <label>
+                        <span>Valeur par défaut</span>
+                        <select
+                          value={String(Boolean(selectedComponent.defaultValue))}
+                          onChange={(event) =>
+                            updateSelectedComponent((item) => ({
+                              ...item,
+                              defaultValue: event.target.value === 'true'
+                            }))
+                          }
+                          disabled={!canEdit}
+                        >
+                          <option value="false">False</option>
+                          <option value="true">True</option>
+                        </select>
+                      </label>
+                    ) : null}
+
+                    {(selectedComponent.type !== 'checkbox') ? (
+                      <label>
+                        <span>Valeur par défaut</span>
+                        <input
+                          type={selectedComponent.type === 'number' || selectedComponent.type === 'range' ? 'number' : 'text'}
+                          value={
+                            typeof selectedComponent.defaultValue === 'number'
+                              ? selectedComponent.defaultValue
+                              : typeof selectedComponent.defaultValue === 'string'
+                              ? selectedComponent.defaultValue
+                              : ''
+                          }
+                          onChange={(event) =>
+                            updateSelectedComponent((item) => ({
+                              ...item,
+                              defaultValue:
+                                selectedComponent.type === 'number' || selectedComponent.type === 'range'
+                                  ? Number(event.target.value)
+                                  : event.target.value
+                            }))
+                          }
+                          disabled={!canEdit}
+                        />
+                      </label>
+                    ) : null}
+
+                    <label>
+                      <span>Obligatoire</span>
+                      <select
+                        value={String(Boolean(selectedComponent.required))}
+                        onChange={(event) =>
+                          updateSelectedComponent((item) => ({
+                            ...item,
+                            required: event.target.value === 'true'
                           }))
                         }
                         disabled={!canEdit}
                       >
-                        <option value="false">False</option>
-                        <option value="true">True</option>
+                        <option value="false">Non</option>
+                        <option value="true">Oui</option>
                       </select>
                     </label>
-                  ) : null}
 
-                  {selectedComponent.type === 'number' ? (
-                    <label>
-                      <span>Valeur par défaut</span>
-                      <input
-                        type="number"
-                        value={typeof selectedComponent.defaultValue === 'number' ? selectedComponent.defaultValue : 0}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({
-                            ...item,
-                            defaultValue: Number(event.target.value)
-                          }))
-                        }
-                        disabled={!canEdit}
-                      />
-                    </label>
-                  ) : null}
+                    <Button type="button" variant="secondary" onClick={deleteSelectedComponent} disabled={!canEdit}>
+                      Supprimer ce composant
+                    </Button>
 
-                  {(selectedComponent.type === 'text' || selectedComponent.type === 'button') ? (
-                    <label>
-                      <span>Valeur par défaut</span>
-                      <input
-                        type="text"
-                        value={typeof selectedComponent.defaultValue === 'string' ? selectedComponent.defaultValue : ''}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({
-                            ...item,
-                            defaultValue: event.target.value
-                          }))
-                        }
-                        disabled={!canEdit}
-                      />
-                    </label>
-                  ) : null}
-
-                  <Button type="button" variant="secondary" onClick={deleteSelectedComponent} disabled={!canEdit}>
-                    Supprimer ce composant
-                  </Button>
-
-                  <p style={{ marginBottom: 0, fontSize: '0.85rem' }}>
-                    Astuce: utilise <code>@nomChamp</code> dans les références et formules pour relier les champs entre eux.
-                  </p>
-                </div>
-              ) : (
-                <p style={{ margin: 0 }}>Sélectionne un composant dans la vue centrale.</p>
-              )}
-            </aside>
+                    <p style={{ marginBottom: 0, fontSize: '0.85rem' }}>
+                      Astuce: utilise <code>@nomChamp</code> dans références/formules pour relier les champs.
+                    </p>
+                  </div>
+                ) : (
+                  <p style={{ margin: 0 }}>Sélectionne un composant dans la vue centrale.</p>
+                )}
+              </aside>
+            </section>
           </section>
         </>
       )}

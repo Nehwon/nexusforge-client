@@ -27,6 +27,13 @@ a:hover {
   padding: 1.5rem;
 }
 
+.page--wide {
+  max-width: 100%;
+  width: 100%;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
 .top-nav {
   position: sticky;
   top: 0;
@@ -912,7 +919,7 @@ body.theme-dark .system-builder__toolbar {
 
 .studio-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(260px, 340px);
+  grid-template-columns: minmax(220px, 300px) 8px minmax(0, 1fr) 8px minmax(260px, 340px);
   gap: 1rem;
   align-items: start;
 }
@@ -1001,6 +1008,27 @@ body.theme-dark .system-builder__toolbar {
   gap: 0.35rem;
 }
 
+.studio-splitter {
+  width: 8px;
+  border-radius: 999px;
+  background: #d0d5dd;
+  cursor: col-resize;
+  align-self: stretch;
+}
+
+.studio-splitter:hover {
+  background: #98a2b3;
+}
+
+.studio-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  padding: 1rem;
+  overflow: auto;
+  background: #0b1220;
+}
+
 body.theme-dark .studio-panel {
   border-color: #334155;
   background: #111827;
@@ -1023,6 +1051,14 @@ body.theme-dark .studio-component-card {
 
 body.theme-dark .studio-component-card.is-drag-over {
   background: #1e293b;
+}
+
+body.theme-dark .studio-splitter {
+  background: #334155;
+}
+
+body.theme-dark .studio-splitter:hover {
+  background: #475569;
 }
 
 @media (max-width: 900px) {
@@ -1063,5 +1099,9 @@ body.theme-dark .studio-component-card.is-drag-over {
 
   .studio-layout {
     grid-template-columns: 1fr;
+  }
+
+  .studio-splitter {
+    display: none;
   }
 }

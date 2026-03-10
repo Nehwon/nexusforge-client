@@ -7,7 +7,9 @@ import { listPendingUsersService } from '../services/authService';
 
 const THEME_STORAGE_KEY = 'nexusforge.theme';
 
-export default function Layout({ children }: PropsWithChildren) {
+type LayoutProps = PropsWithChildren<{ wide?: boolean }>;
+
+export default function Layout({ children, wide = false }: LayoutProps) {
   const { currentUser, logout } = useAuth();
   const { locale, setLocale, supportedLocales, t } = useI18n();
   const isAdmin = Boolean(currentUser?.roles.includes('admin'));
@@ -135,7 +137,7 @@ export default function Layout({ children }: PropsWithChildren) {
           </div>
         ) : null}
       </header>
-      <main className="page">{children}</main>
+      <main className={`page ${wide ? 'page--wide' : ''}`.trim()}>{children}</main>
     </>
   );
 }
