@@ -496,6 +496,10 @@ export default function SystemStudioPage() {
   const [selectedButtonTemplateId, setSelectedButtonTemplateId] = useState('');
   const [customButtonTemplates, setCustomButtonTemplates] = useState<ButtonScriptTemplate[]>([]);
   const [newTemplateName, setNewTemplateName] = useState('');
+  const [viewerUserIdsDraft, setViewerUserIdsDraft] = useState('');
+  const [editorUserIdsDraft, setEditorUserIdsDraft] = useState('');
+  const [scriptTestInput, setScriptTestInput] = useState('{}');
+  const [scriptTestResult, setScriptTestResult] = useState<string>('');
   const lastSavedSchemaRef = useRef<string>('');
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
@@ -538,6 +542,8 @@ export default function SystemStudioPage() {
         const normalized = ensureSchema(loaded);
         setSystem(loaded);
         setSchema(normalized);
+        setViewerUserIdsDraft((loaded.viewerUserIds ?? []).join(', '));
+        setEditorUserIdsDraft((loaded.editorUserIds ?? []).join(', '));
         lastSavedSchemaRef.current = JSON.stringify(normalized);
         setIsDirty(false);
         setSelectedViewId(normalized.views[0]?.id ?? '');
@@ -596,6 +602,16 @@ export default function SystemStudioPage() {
   useEffect(() => {
     setSelectedButtonTemplateId('');
   }, [selectedComponentId]);
+
+  useEffect(() => {
+    if (selectedComponent?.type !== 'button') {
+      return;
+    }
+    const script = selectedComponent.actionScript?.trim() || selectedComponent.formula?.trim() || '';
+    if (script) {
+      setScriptTestResult('');
+    }
+  }, [selectedComponent?.id, selectedComponent?.type, selectedComponent?.actionScript, selectedComponent?.formula]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -844,7 +860,16 @@ export default function SystemStudioPage() {
     }
     setIsSaving(true);
     try {
+      const parseUserIds = (raw: string): string[] =>
+        raw
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+      const viewerUserIds = parseUserIds(viewerUserIdsDraft);
+      const editorUserIds = parseUserIds(editorUserIdsDraft);
       const nextSystem: GameSystem = { ...system, studioSchema: schema };
+      nextSystem.viewerUserIds = viewerUserIds;
+      nextSystem.editorUserIds = editorUserIds;
       await systemRepository.upsert(nextSystem, currentUser);
       setSystem(nextSystem);
       lastSavedSchemaRef.current = JSON.stringify(schema);
@@ -910,6 +935,28 @@ export default function SystemStudioPage() {
     const computed = applyDerivedFormulas(selectedView?.components ?? [], nextValues);
     setRuntimeValues(computed);
     setRuntimeMessage(logs.length > 0 ? logs.join(' | ') : 'Script execute.');
+  };
+
+  const runScriptTester = () => {
+    if (!selectedComponent || selectedComponent.type !== 'button') {
+      setScriptTestResult('Selectionne un bouton.');
+      return;
+    }
+    const script = selectedComponent.actionScript?.trim() || selectedComponent.formula?.trim() || '';
+    if (!script) {
+      setScriptTestResult('Script vide.');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(scriptTestInput);
+      const baseValues = parsed && typeof parsed === 'object' ? (parsed as RuntimeValues) : {};
+      const { nextValues, logs } = executeRuntimeScript(script, baseValues);
+      setScriptTestResult(
+        `Logs:\\n${logs.join('\\n') || '(aucun)'}\\n\\nValeurs finales:\\n${JSON.stringify(nextValues, null, 2)}`
+      );
+    } catch (error) {
+      setScriptTestResult(error instanceof Error ? `Erreur JSON: ${error.message}` : 'Erreur de test.');
+    }
   };
 
   const applySelectedButtonTemplate = () => {
@@ -998,6 +1045,51 @@ export default function SystemStudioPage() {
               <p style={{ marginBottom: 0, opacity: 0.85 }}>
                 {isDirty ? 'Modifications en attente (autosave: 60s).' : 'Studio a jour.'}
               </p>
+            ) : null}
+            {canEdit ? (
+              <div style={{ display: 'grid', gap: '0.55rem', marginTop: '0.6rem' }}>
+                <label style={{ display: 'grid', gap: '0.25rem' }}>
+                  <span>Lecteurs supplementaires (IDs comptes, separes par virgule)</span>
+                  <input
+                    type="text"
+                    value={viewerUserIdsDraft}
+                    onChange={(event) => {
+                      setViewerUserIdsDraft(event.target.value);
+                      setIsDirty(true);
+                    }}
+                    placeholder="user-a, user-b"
+                    disabled={!canEdit}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: '0.25rem' }}>
+                  <span>Co-editeurs (IDs comptes, separes par virgule)</span>
+                  <input
+                    type="text"
+                    value={editorUserIdsDraft}
+                    onChange={(event) => {
+                      setEditorUserIdsDraft(event.target.value);
+                      setIsDirty(true);
+                    }}
+                    placeholder="user-gm-2"
+                    disabled={!canEdit}
+                  />
+                </label>
+              </div>
+            ) : null}
+            {system?.auditTrail && system.auditTrail.length > 0 ? (
+              <details style={{ marginTop: '0.6rem' }}>
+                <summary>Audit trail ({system.auditTrail.length})</summary>
+                <div style={{ display: 'grid', gap: '0.35rem', marginTop: '0.45rem' }}>
+                  {[...system.auditTrail]
+                    .reverse()
+                    .slice(0, 12)
+                    .map((entry) => (
+                      <small key={entry.id}>
+                        [{new Date(entry.at).toLocaleString()}] {entry.byUserId} - {entry.action} - {entry.summary}
+                      </small>
+                    ))}
+                </div>
+              </details>
             ) : null}
           </section>
 
@@ -1406,6 +1498,36 @@ export default function SystemStudioPage() {
                           Commandes: <code>IF</code>, <code>ELSE</code>, <code>ENDIF</code>, <code>SET</code>,{' '}
                           <code>ADD</code>, <code>TOGGLE</code>, <code>ROLL</code>.
                         </small>
+                        <details>
+                          <summary>Tester le script</summary>
+                          <label style={{ display: 'grid', gap: '0.25rem', marginTop: '0.4rem' }}>
+                            <span>Valeurs JSON d entree</span>
+                            <textarea
+                              rows={6}
+                              value={scriptTestInput}
+                              onChange={(event) => setScriptTestInput(event.target.value)}
+                              placeholder='{"hp":10,"attaque":3}'
+                            />
+                          </label>
+                          <div style={{ marginTop: '0.45rem' }}>
+                            <Button type="button" variant="secondary" onClick={runScriptTester}>
+                              Executer test
+                            </Button>
+                          </div>
+                          {scriptTestResult ? (
+                            <pre
+                              style={{
+                                marginTop: '0.45rem',
+                                whiteSpace: 'pre-wrap',
+                                border: '1px solid #334155',
+                                borderRadius: 8,
+                                padding: '0.55rem'
+                              }}
+                            >
+                              {scriptTestResult}
+                            </pre>
+                          ) : null}
+                        </details>
                       </>
                     ) : null}
 

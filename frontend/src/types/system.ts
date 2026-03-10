@@ -110,6 +110,14 @@ export interface StudioSchema {
   views: StudioViewDefinition[];
 }
 
+export interface SystemAuditEntry {
+  id: string;
+  at: string;
+  byUserId: string;
+  action: string;
+  summary: string;
+}
+
 export interface GameSystem {
   id: string;
   name: string;
@@ -118,6 +126,8 @@ export interface GameSystem {
   author?: string;
   ownerUserId: string;
   visibility: GameSystemVisibility;
+  viewerUserIds?: string[];
+  editorUserIds?: string[];
   forkedFromSystemId?: string;
   forkedFromSystemName?: string;
   tags?: string[];
@@ -125,6 +135,7 @@ export interface GameSystem {
   rulesProgram?: RulesProgramBlock[];
   rulesPresentation?: RulesPresentation;
   studioSchema?: StudioSchema;
+  auditTrail?: SystemAuditEntry[];
   referenceSheets?: CharacterSheetView[];
   createdAt: string;
   updatedAt: string;

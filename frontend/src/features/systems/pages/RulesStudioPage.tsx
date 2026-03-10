@@ -17,6 +17,7 @@ export default function RulesStudioPage() {
   const [duplicateDescription, setDuplicateDescription] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [importPayload, setImportPayload] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -129,6 +130,64 @@ export default function RulesStudioPage() {
     }
   };
 
+  const handleExportSystem = (system: GameSystem) => {
+    const payload = JSON.stringify(system, null, 2);
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${system.name.replace(/[^a-zA-Z0-9-_]+/g, '_') || 'system'}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportSystem = async () => {
+    if (!currentUser || !canManage) {
+      return;
+    }
+    if (!importPayload.trim()) {
+      setErrorMessage('Colle un JSON a importer.');
+      return;
+    }
+    setErrorMessage(null);
+    setStatusMessage(null);
+    setIsSaving(true);
+    try {
+      const parsed = JSON.parse(importPayload) as Partial<GameSystem>;
+      if (!parsed.name) {
+        throw new Error('JSON invalide: name manquant.');
+      }
+
+      const created = await systemRepository.create({
+        owner: currentUser,
+        name: `${parsed.name} (import)`,
+        description: parsed.description ?? '',
+        visibility: 'private'
+      });
+
+      await systemRepository.upsert(
+        {
+          ...created,
+          version: parsed.version ?? created.version,
+          tags: parsed.tags ?? created.tags,
+          studioSchema: parsed.studioSchema ?? created.studioSchema,
+          referenceSheets: parsed.referenceSheets ?? created.referenceSheets,
+          rulesProgram: parsed.rulesProgram ?? created.rulesProgram,
+          rulesPresentation: parsed.rulesPresentation ?? created.rulesPresentation
+        },
+        currentUser
+      );
+
+      await reloadSystems();
+      setStatusMessage(`Système importé: ${created.name}`);
+      setImportPayload('');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Import impossible.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <Layout>
       <section className="card" style={{ marginBottom: '1rem' }}>
@@ -161,7 +220,12 @@ export default function RulesStudioPage() {
                   <p style={{ marginTop: 0, marginBottom: '0.7rem', fontSize: '0.85rem' }}>
                     Visibilité: {system.visibility} | MAJ: {new Date(system.updatedAt).toLocaleString()}
                   </p>
-                  <Link to={`/systems/${system.id}/studio`}>Ouvrir le studio</Link>
+                  <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                    <Link to={`/systems/${system.id}/studio`}>Ouvrir le studio</Link>
+                    <button className="button secondary" type="button" onClick={() => handleExportSystem(system)}>
+                      Export JSON
+                    </button>
+                  </div>
                 </article>
               ))}
             </div>
@@ -237,6 +301,23 @@ export default function RulesStudioPage() {
                   Dupliquer
                 </Button>
               </div>
+            </div>
+          </section>
+          <section className="card" style={{ marginBottom: '1rem' }}>
+            <h2 style={{ marginTop: 0 }}>4) Import JSON d'un système</h2>
+            <label style={{ display: 'grid', gap: '0.35rem' }}>
+              <span>Colle le JSON exporté</span>
+              <textarea
+                rows={8}
+                value={importPayload}
+                onChange={(event) => setImportPayload(event.target.value)}
+                placeholder='{"name":"Mon systeme", ...}'
+              />
+            </label>
+            <div style={{ marginTop: '0.6rem' }}>
+              <Button type="button" variant="secondary" onClick={() => void handleImportSystem()} disabled={isSaving}>
+                Importer JSON
+              </Button>
             </div>
           </section>
         </>

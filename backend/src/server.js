@@ -255,11 +255,29 @@ function verifyTotpCode(secret, code) {
 }
 
 function canViewSystem(system, user) {
-  return system.visibility === 'public' || system.ownerUserId === user.id || user.roles.includes('admin');
+  return (
+    system.visibility === 'public' ||
+    system.ownerUserId === user.id ||
+    user.roles.includes('admin') ||
+    (system.editorUserIds || []).includes(user.id) ||
+    (system.viewerUserIds || []).includes(user.id)
+  );
 }
 
 function canEditSystem(system, user) {
-  return system.ownerUserId === user.id || user.roles.includes('admin');
+  return system.ownerUserId === user.id || user.roles.includes('admin') || (system.editorUserIds || []).includes(user.id);
+}
+
+function appendSystemAudit(system, params) {
+  const entry = {
+    id: makeId('audit'),
+    at: nowIso(),
+    byUserId: params.byUserId,
+    action: params.action,
+    summary: params.summary
+  };
+  const current = Array.isArray(system.auditTrail) ? system.auditTrail : [];
+  return [...current, entry].slice(-100);
 }
 
 function getSystemUsage(systemId) {
@@ -1281,6 +1299,8 @@ app.post('/api/systems', requireAuth, (req, res) => {
     author: req.currentUser.displayName,
     ownerUserId: req.currentUser.id,
     visibility: body.visibility === 'public' ? 'public' : 'private',
+    viewerUserIds: Array.isArray(body.viewerUserIds) ? body.viewerUserIds.filter((id) => typeof id === 'string') : [],
+    editorUserIds: Array.isArray(body.editorUserIds) ? body.editorUserIds.filter((id) => typeof id === 'string') : [],
     tags: Array.isArray(body.tags) ? body.tags : ['custom'],
     rulesProgram: Array.isArray(body.rulesProgram) ? body.rulesProgram : rulesProgram,
     ...(body.rulesPresentation && typeof body.rulesPresentation === 'object'
@@ -1295,6 +1315,15 @@ app.post('/api/systems', requireAuth, (req, res) => {
       : {}),
     ...(forkedFromSystemId ? { forkedFromSystemId } : {}),
     ...(forkedFromSystemName ? { forkedFromSystemName } : {}),
+    auditTrail: [
+      {
+        id: makeId('audit'),
+        at: nowIso(),
+        byUserId: req.currentUser.id,
+        action: 'create',
+        summary: 'Creation du systeme'
+      }
+    ],
     referenceSheets: Array.isArray(body.referenceSheets) ? body.referenceSheets : referenceSheets,
     createdAt: nowIso(),
     updatedAt: nowIso()
@@ -1315,17 +1344,30 @@ app.patch('/api/systems/:systemId', requireAuth, (req, res) => {
   }
 
   const body = req.body || {};
+  const nextVisibility =
+    typeof body.visibility === 'string' ? (body.visibility === 'private' ? 'private' : 'public') : system.visibility;
   const next = {
     ...system,
     ...(typeof body.name === 'string' ? { name: body.name } : {}),
     ...(typeof body.description === 'string' ? { description: body.description } : {}),
     ...(typeof body.version === 'string' ? { version: body.version } : {}),
-    ...(typeof body.visibility === 'string' ? { visibility: body.visibility === 'private' ? 'private' : 'public' } : {}),
+    visibility: nextVisibility,
+    ...(Array.isArray(body.viewerUserIds)
+      ? { viewerUserIds: body.viewerUserIds.filter((id) => typeof id === 'string') }
+      : {}),
+    ...(Array.isArray(body.editorUserIds)
+      ? { editorUserIds: body.editorUserIds.filter((id) => typeof id === 'string') }
+      : {}),
     ...(Array.isArray(body.tags) ? { tags: body.tags } : {}),
     ...(Array.isArray(body.rulesProgram) ? { rulesProgram: body.rulesProgram } : {}),
     ...(body.rulesPresentation && typeof body.rulesPresentation === 'object' ? { rulesPresentation: body.rulesPresentation } : {}),
     ...(body.studioSchema && typeof body.studioSchema === 'object' ? { studioSchema: body.studioSchema } : {}),
     ...(Array.isArray(body.referenceSheets) ? { referenceSheets: body.referenceSheets } : {}),
+    auditTrail: appendSystemAudit(system, {
+      byUserId: req.currentUser.id,
+      action: 'update',
+      summary: 'Mise a jour du systeme'
+    }),
     updatedAt: nowIso()
   };
 
@@ -1351,8 +1393,19 @@ app.post('/api/systems/:systemId/duplicate', requireAuth, (req, res) => {
     description: typeof body.description === 'string' ? body.description : source.description || '',
     ownerUserId: req.currentUser.id,
     visibility: 'private',
+    viewerUserIds: [],
+    editorUserIds: [],
     forkedFromSystemId: source.id,
     forkedFromSystemName: source.name,
+    auditTrail: [
+      {
+        id: makeId('audit'),
+        at: nowIso(),
+        byUserId: req.currentUser.id,
+        action: 'duplicate',
+        summary: `Fork depuis ${source.name}`
+      }
+    ],
     createdAt: nowIso(),
     updatedAt: nowIso()
   };

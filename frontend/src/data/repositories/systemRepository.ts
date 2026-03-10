@@ -14,11 +14,17 @@ function isAdmin(user: User): boolean {
 }
 
 export function canUserEditSystem(system: GameSystem, user: User): boolean {
-  return system.ownerUserId === user.id || isAdmin(user);
+  return system.ownerUserId === user.id || isAdmin(user) || (system.editorUserIds ?? []).includes(user.id);
 }
 
 function canUserViewSystem(system: GameSystem, user: User): boolean {
-  return system.visibility === 'public' || system.ownerUserId === user.id || isAdmin(user);
+  return (
+    system.visibility === 'public' ||
+    system.ownerUserId === user.id ||
+    isAdmin(user) ||
+    (system.editorUserIds ?? []).includes(user.id) ||
+    (system.viewerUserIds ?? []).includes(user.id)
+  );
 }
 
 function cloneSystemForDuplicate(source: GameSystem, actor: User, name?: string): GameSystem {
@@ -29,8 +35,19 @@ function cloneSystemForDuplicate(source: GameSystem, actor: User, name?: string)
     name: name?.trim() || `${source.name} (copie)`,
     ownerUserId: actor.id,
     visibility: 'private',
+    viewerUserIds: [],
+    editorUserIds: [],
     forkedFromSystemId: source.id,
     forkedFromSystemName: source.name,
+    auditTrail: [
+      {
+        id: makeId('audit'),
+        at: now,
+        byUserId: actor.id,
+        action: 'duplicate',
+        summary: `Fork depuis ${source.name}`
+      }
+    ],
     createdAt: now,
     updatedAt: now,
     studioSchema: source.studioSchema
@@ -61,6 +78,12 @@ function mapApiSystem(raw: Record<string, unknown>): GameSystem {
     author: typeof raw.author === 'string' ? raw.author : undefined,
     ownerUserId: String(raw.ownerUserId ?? ''),
     visibility: raw.visibility === 'private' ? 'private' : 'public',
+    viewerUserIds: Array.isArray(raw.viewerUserIds)
+      ? raw.viewerUserIds.filter((item): item is string => typeof item === 'string')
+      : [],
+    editorUserIds: Array.isArray(raw.editorUserIds)
+      ? raw.editorUserIds.filter((item): item is string => typeof item === 'string')
+      : [],
     forkedFromSystemId: typeof raw.forkedFromSystemId === 'string' ? raw.forkedFromSystemId : undefined,
     forkedFromSystemName: typeof raw.forkedFromSystemName === 'string' ? raw.forkedFromSystemName : undefined,
     tags: Array.isArray(raw.tags) ? raw.tags.filter((item): item is string => typeof item === 'string') : [],
@@ -71,6 +94,7 @@ function mapApiSystem(raw: Record<string, unknown>): GameSystem {
         ? (raw.rulesPresentation as GameSystem['rulesPresentation'])
         : undefined,
     studioSchema: raw.studioSchema && typeof raw.studioSchema === 'object' ? (raw.studioSchema as GameSystem['studioSchema']) : undefined,
+    auditTrail: Array.isArray(raw.auditTrail) ? (raw.auditTrail as GameSystem['auditTrail']) : [],
     referenceSheets: Array.isArray(raw.referenceSheets) ? (raw.referenceSheets as GameSystem['referenceSheets']) : [],
     createdAt: String(raw.createdAt ?? new Date().toISOString()),
     updatedAt: String(raw.updatedAt ?? new Date().toISOString())
@@ -219,10 +243,21 @@ export const systemRepository = {
       author: params.owner.displayName,
       ownerUserId: params.owner.id,
       visibility: params.visibility ?? 'private',
+      viewerUserIds: [],
+      editorUserIds: [],
       ...(forkedFromSystemId ? { forkedFromSystemId } : {}),
       ...(forkedFromSystemName ? { forkedFromSystemName } : {}),
       tags: ['custom'],
       ...(studioSchema ? { studioSchema } : {}),
+      auditTrail: [
+        {
+          id: makeId('audit'),
+          at: now,
+          byUserId: params.owner.id,
+          action: 'create',
+          summary: 'Creation du systeme'
+        }
+      ],
       rulesProgram,
       referenceSheets,
       createdAt: now,
@@ -295,6 +330,8 @@ export const systemRepository = {
             description: system.description,
             version: system.version,
             visibility: system.visibility,
+            viewerUserIds: system.viewerUserIds,
+            editorUserIds: system.editorUserIds,
             tags: system.tags,
             rulesProgram: system.rulesProgram,
             rulesPresentation: system.rulesPresentation,
@@ -315,6 +352,16 @@ export const systemRepository = {
     const nextSystem: GameSystem = {
       ...system,
       ownerUserId: existing?.ownerUserId ?? actor?.id ?? system.ownerUserId,
+      auditTrail: [
+        ...(existing?.auditTrail ?? system.auditTrail ?? []),
+        {
+          id: makeId('audit'),
+          at: new Date().toISOString(),
+          byUserId: actor?.id ?? existing?.ownerUserId ?? system.ownerUserId,
+          action: 'update',
+          summary: 'Mise a jour locale du systeme'
+        }
+      ].slice(-80),
       updatedAt: new Date().toISOString()
     };
 
