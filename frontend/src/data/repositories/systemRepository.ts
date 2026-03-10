@@ -29,8 +29,18 @@ function cloneSystemForDuplicate(source: GameSystem, actor: User, name?: string)
     name: name?.trim() || `${source.name} (copie)`,
     ownerUserId: actor.id,
     visibility: 'private',
+    forkedFromSystemId: source.id,
+    forkedFromSystemName: source.name,
     createdAt: now,
     updatedAt: now,
+    studioSchema: source.studioSchema
+      ? {
+          views: source.studioSchema.views.map((view) => ({
+            ...view,
+            components: view.components.map((component) => ({ ...component }))
+          }))
+        }
+      : undefined,
     rulesProgram: source.rulesProgram?.map((block) => ({ ...block })) ?? [],
     referenceSheets:
       source.referenceSheets?.map((sheet) => ({
@@ -46,10 +56,13 @@ function mapApiSystem(raw: Record<string, unknown>): GameSystem {
   return {
     id: String(raw.id ?? ''),
     name: String(raw.name ?? 'Systeme'),
+    description: typeof raw.description === 'string' ? raw.description : undefined,
     version: String(raw.version ?? '0.1.0'),
     author: typeof raw.author === 'string' ? raw.author : undefined,
     ownerUserId: String(raw.ownerUserId ?? ''),
     visibility: raw.visibility === 'private' ? 'private' : 'public',
+    forkedFromSystemId: typeof raw.forkedFromSystemId === 'string' ? raw.forkedFromSystemId : undefined,
+    forkedFromSystemName: typeof raw.forkedFromSystemName === 'string' ? raw.forkedFromSystemName : undefined,
     tags: Array.isArray(raw.tags) ? raw.tags.filter((item): item is string => typeof item === 'string') : [],
     rollDefinitions: Array.isArray(raw.rollDefinitions) ? (raw.rollDefinitions as GameSystem['rollDefinitions']) : [],
     rulesProgram: Array.isArray(raw.rulesProgram) ? (raw.rulesProgram as GameSystem['rulesProgram']) : [],
@@ -57,6 +70,7 @@ function mapApiSystem(raw: Record<string, unknown>): GameSystem {
       raw.rulesPresentation && typeof raw.rulesPresentation === 'object'
         ? (raw.rulesPresentation as GameSystem['rulesPresentation'])
         : undefined,
+    studioSchema: raw.studioSchema && typeof raw.studioSchema === 'object' ? (raw.studioSchema as GameSystem['studioSchema']) : undefined,
     referenceSheets: Array.isArray(raw.referenceSheets) ? (raw.referenceSheets as GameSystem['referenceSheets']) : [],
     createdAt: String(raw.createdAt ?? new Date().toISOString()),
     updatedAt: String(raw.updatedAt ?? new Date().toISOString())
@@ -137,6 +151,7 @@ export const systemRepository = {
   async create(params: {
     owner: User;
     name: string;
+    description?: string;
     version?: string;
     visibility?: GameSystemVisibility;
     templateFromSystemId?: string;
@@ -151,6 +166,7 @@ export const systemRepository = {
           withAuth: true,
           body: {
             name: params.name,
+            description: params.description ?? '',
             version: params.version ?? '0.1.0',
             visibility: params.visibility ?? 'private',
             templateFromSystemId: params.templateFromSystemId
@@ -167,6 +183,9 @@ export const systemRepository = {
     const now = new Date().toISOString();
     let referenceSheets: NonNullable<GameSystem['referenceSheets']> = [];
     let rulesProgram: NonNullable<GameSystem['rulesProgram']> = [];
+    let studioSchema: GameSystem['studioSchema'] = undefined;
+    let forkedFromSystemId: string | undefined;
+    let forkedFromSystemName: string | undefined;
 
     if (params.templateFromSystemId) {
       const source = await db.systems.get(params.templateFromSystemId);
@@ -179,17 +198,31 @@ export const systemRepository = {
             actions: sheet.actions?.map((action) => ({ ...action }))
           })) ?? [];
         rulesProgram = source.rulesProgram?.map((block) => ({ ...block })) ?? [];
+        studioSchema = source.studioSchema
+          ? {
+              views: source.studioSchema.views.map((view) => ({
+                ...view,
+                components: view.components.map((component) => ({ ...component }))
+              }))
+            }
+          : undefined;
+        forkedFromSystemId = source.id;
+        forkedFromSystemName = source.name;
       }
     }
 
     const system: GameSystem = {
       id: makeId('sys'),
       name: params.name.trim() || 'Nouveau systeme',
+      description: params.description?.trim() || '',
       version: params.version ?? '0.1.0',
       author: params.owner.displayName,
       ownerUserId: params.owner.id,
       visibility: params.visibility ?? 'private',
+      ...(forkedFromSystemId ? { forkedFromSystemId } : {}),
+      ...(forkedFromSystemName ? { forkedFromSystemName } : {}),
       tags: ['custom'],
+      ...(studioSchema ? { studioSchema } : {}),
       rulesProgram,
       referenceSheets,
       createdAt: now,
@@ -207,7 +240,7 @@ export const systemRepository = {
     return system;
   },
 
-  async duplicate(params: { sourceSystemId: string; actor: User; name?: string }): Promise<GameSystem> {
+  async duplicate(params: { sourceSystemId: string; actor: User; name?: string; description?: string }): Promise<GameSystem> {
     await ensureDatabaseIsInitialized();
     if (isBackendEnabled()) {
       try {
@@ -215,7 +248,10 @@ export const systemRepository = {
           path: `/api/systems/${params.sourceSystemId}/duplicate`,
           method: 'POST',
           withAuth: true,
-          body: params.name ? { name: params.name } : {}
+          body: {
+            ...(params.name ? { name: params.name } : {}),
+            ...(typeof params.description === 'string' ? { description: params.description } : {})
+          }
         });
         const mapped = mapApiSystem(payload.system);
         await db.systems.put(mapped);
@@ -230,7 +266,10 @@ export const systemRepository = {
       throw new Error('Systeme source introuvable ou inaccessible.');
     }
 
-    const duplicated = cloneSystemForDuplicate(source, params.actor, params.name);
+    const duplicated = {
+      ...cloneSystemForDuplicate(source, params.actor, params.name),
+      description: typeof params.description === 'string' ? params.description : source.description
+    };
     await db.systems.put(duplicated);
     await localActionRepository.enqueue({
       entityType: 'system',
@@ -253,11 +292,13 @@ export const systemRepository = {
           withAuth: true,
           body: {
             name: system.name,
+            description: system.description,
             version: system.version,
             visibility: system.visibility,
             tags: system.tags,
             rulesProgram: system.rulesProgram,
             rulesPresentation: system.rulesPresentation,
+            studioSchema: system.studioSchema,
             referenceSheets: system.referenceSheets
           }
         });

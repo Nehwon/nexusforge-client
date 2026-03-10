@@ -12,7 +12,7 @@ export const messages: Messages = {
   fr: {
     'nav.brand': 'NexusForge',
     'nav.parties': 'Parties',
-    'nav.rules': 'Règles',
+    'nav.rules': 'Atelier Systeme',
     'nav.security': 'Sécurité',
     'nav.admin': 'Admin',
     'nav.login': 'Connexion',
@@ -36,7 +36,7 @@ export const messages: Messages = {
   en: {
     'nav.brand': 'NexusForge',
     'nav.parties': 'Games',
-    'nav.rules': 'Rules',
+    'nav.rules': 'System Workshop',
     'nav.security': 'Security',
     'nav.admin': 'Admin',
     'nav.login': 'Login',
@@ -60,7 +60,7 @@ export const messages: Messages = {
   de: {
     'nav.brand': 'NexusForge',
     'nav.parties': 'Partien',
-    'nav.rules': 'Regeln',
+    'nav.rules': 'System-Werkstatt',
     'nav.security': 'Sicherheit',
     'nav.admin': 'Admin',
     'nav.login': 'Anmelden',
@@ -84,7 +84,7 @@ export const messages: Messages = {
   es: {
     'nav.brand': 'NexusForge',
     'nav.parties': 'Partidas',
-    'nav.rules': 'Reglas',
+    'nav.rules': 'Taller de Sistema',
     'nav.security': 'Seguridad',
     'nav.admin': 'Admin',
     'nav.login': 'Acceso',

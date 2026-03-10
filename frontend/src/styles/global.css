@@ -910,6 +910,121 @@ body.theme-dark .system-builder__toolbar {
   background: #fff;
 }
 
+.studio-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(260px, 340px);
+  gap: 1rem;
+  align-items: start;
+}
+
+.studio-panel {
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.studio-tree {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.studio-tree details {
+  border: 1px solid #eaecf0;
+  border-radius: 10px;
+  padding: 0.55rem;
+  background: #f8fafc;
+}
+
+.studio-tree summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.studio-palette-list {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.studio-views {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.65rem;
+  align-items: end;
+}
+
+.studio-canvas {
+  border: 1px dashed #d0d5dd;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.7rem;
+  min-height: 340px;
+}
+
+.studio-components-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.6rem;
+}
+
+.studio-component-card {
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.25rem;
+  cursor: pointer;
+}
+
+.studio-component-card.is-selected {
+  border-color: #155eef;
+  box-shadow: 0 0 0 2px rgba(21, 94, 239, 0.16);
+}
+
+.studio-component-card.is-drag-over {
+  border-color: #155eef;
+  background: #eef4ff;
+}
+
+.studio-properties {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.studio-properties label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+body.theme-dark .studio-panel {
+  border-color: #334155;
+  background: #111827;
+}
+
+body.theme-dark .studio-tree details {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+body.theme-dark .studio-canvas {
+  border-color: #475569;
+  background: #0f172a;
+}
+
+body.theme-dark .studio-component-card {
+  border-color: #334155;
+  background: #111827;
+}
+
+body.theme-dark .studio-component-card.is-drag-over {
+  background: #1e293b;
+}
+
 @media (max-width: 900px) {
   .chat-widget__layout {
     grid-template-columns: 1fr;
@@ -943,6 +1058,10 @@ body.theme-dark .system-builder__toolbar {
   }
 
   .system-builder__reference-field {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-layout {
     grid-template-columns: 1fr;
   }
 }

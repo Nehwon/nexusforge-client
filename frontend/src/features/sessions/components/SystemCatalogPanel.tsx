@@ -128,7 +128,7 @@ export default function SystemCatalogPanel({ currentUser, currentSession, role, 
 
       {canManage ? (
         <p style={{ margin: 0 }}>
-          Pour créer/dupliquer/éditer visuellement les règles: <Link to="/systems">ouvrir le Studio des règles</Link>.
+          Pour créer/dupliquer/éditer visuellement les règles: <Link to="/systems">ouvrir l'Atelier Systeme</Link>.
         </p>
       ) : null}
 

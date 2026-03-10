@@ -9,6 +9,7 @@ import AdminPendingUsersPage from '../features/auth/pages/AdminPendingUsersPage'
 import SessionsListPage from '../features/sessions/pages/SessionsListPage';
 import SessionViewPage from '../features/sessions/pages/SessionViewPage';
 import RulesStudioPage from '../features/systems/pages/RulesStudioPage';
+import SystemStudioPage from '../features/systems/pages/SystemStudioPage';
 import TranslationDictionaryPage from '../features/i18n/pages/TranslationDictionaryPage';
 import { useAuth } from '../hooks/useAuth';
 
@@ -74,6 +75,14 @@ export const router = createBrowserRouter([
     element: (
       <RequireGmOrAdmin>
         <RulesStudioPage />
+      </RequireGmOrAdmin>
+    )
+  },
+  {
+    path: '/systems/:systemId/studio',
+    element: (
+      <RequireGmOrAdmin>
+        <SystemStudioPage />
       </RequireGmOrAdmin>
     )
   },

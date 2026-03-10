@@ -245,6 +245,34 @@ Toujours disponibles comme dans le MVP existant:
 - `POST /api/sessions/{sessionId}/characters/from-template`
 - `POST /api/sync/actions`
 
+### Détail des payloads `systems`
+
+`POST /api/systems` accepte notamment:
+
+- `name` (string)
+- `description` (string, optionnel)
+- `visibility` (`public` | `private`)
+- `templateFromSystemId` (string, optionnel)
+- `rulesProgram` / `rulesPresentation` / `studioSchema` / `referenceSheets` (optionnels)
+
+Notes:
+
+- si `templateFromSystemId` est fourni et accessible, le système est créé comme fork avec:
+  - `forkedFromSystemId`
+  - `forkedFromSystemName`
+
+`PATCH /api/systems/{id}` accepte notamment:
+
+- `name`, `description`, `version`, `visibility`, `tags`
+- `rulesProgram`, `rulesPresentation`, `studioSchema`, `referenceSheets`
+
+`POST /api/systems/{id}/duplicate` accepte:
+
+- `name` (optionnel)
+- `description` (optionnel)
+
+et retourne un système avec fork metadata (`forkedFromSystemId`, `forkedFromSystemName`).
+
 ## Codes d'erreur notables
 
 - `INVALID_REGISTRATION_PAYLOAD`

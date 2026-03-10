@@ -11,9 +11,15 @@
 - Administration des parties: création, archivage/restauration, suppression définitive (owner/admin), propriétaire + multi-MJ.
 - Systèmes de jeu:
   - listing des systèmes disponibles pour l'utilisateur,
-  - création,
-  - duplication,
+  - création (vierge ou depuis template),
+  - duplication (fork),
   - mise à jour avec contrôle propriétaire/admin.
+  - schéma studio visuel persisté (`studioSchema`),
+  - métadonnées de fork (`forkedFromSystemId`, `forkedFromSystemName`).
+- Admin:
+  - validation des comptes en attente,
+  - métriques d'usage systèmes (`GET /api/admin/systems/usage`),
+  - suppression système avec migration des parties (`DELETE /api/admin/systems/{id}`).
 - Templates de fiches de référence intégrés aux systèmes.
 - Création de fiches de session depuis template de système.
 - Sync des actions locales via `/api/sync/actions` (mode HTTP).

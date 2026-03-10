@@ -52,10 +52,12 @@ export default function SessionsListPage() {
 
   const isAdmin = Boolean(currentUser?.roles.includes('admin'));
 
-  const selectedSystemName = useMemo(() => {
-    const byId = new Map(systems.map((system) => [system.id, system.name]));
-    return (systemId: string) => byId.get(systemId) ?? systemId;
+  const systemsById = useMemo(() => {
+    return new Map(systems.map((system) => [system.id, system]));
   }, [systems]);
+
+  const selectedSystemName = (systemId: string) => systemsById.get(systemId)?.name ?? systemId;
+  const selectedSystemDraft = systemsById.get(systemIdDraft);
 
   useEffect(() => {
     let isMounted = true;
@@ -204,11 +206,30 @@ export default function SessionsListPage() {
           >
             {systems.length === 0 ? <option value="">Aucun système disponible</option> : null}
             {systems.map((system) => (
-              <option key={system.id} value={system.id}>
+              <option
+                key={system.id}
+                value={system.id}
+                title={
+                  system.forkedFromSystemName
+                    ? `Basé sur ${system.forkedFromSystemName}`
+                    : 'Système original'
+                }
+              >
                 {system.name}
+                {system.forkedFromSystemName ? ` (fork de ${system.forkedFromSystemName})` : ''}
               </option>
             ))}
           </select>
+          {selectedSystemDraft?.forkedFromSystemName ? (
+            <p style={{ marginTop: '0.45rem', marginBottom: 0 }}>
+              <span
+                title={`Basé sur \"${selectedSystemDraft.forkedFromSystemName}\"`}
+                style={{ borderBottom: '1px dotted currentColor', cursor: 'help' }}
+              >
+                Ce système est basé sur "{selectedSystemDraft.forkedFromSystemName}".
+              </span>
+            </p>
+          ) : null}
 
           <strong>Template générique (modifiable)</strong>
           <label>

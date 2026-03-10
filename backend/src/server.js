@@ -1252,17 +1252,24 @@ app.get('/api/systems/:systemId', requireAuth, (req, res) => {
 app.post('/api/systems', requireAuth, (req, res) => {
   const body = req.body || {};
   const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : 'Nouveau systeme';
+  const description = typeof body.description === 'string' ? body.description.trim() : '';
 
   let rulesProgram = [];
   let rulesPresentation = undefined;
+  let studioSchema = undefined;
   let referenceSheets = [];
+  let forkedFromSystemId = undefined;
+  let forkedFromSystemName = undefined;
 
   if (typeof body.templateFromSystemId === 'string') {
     const source = systems.get(body.templateFromSystemId);
     if (source && canViewSystem(source, req.currentUser)) {
       rulesProgram = clone(source.rulesProgram || []);
       rulesPresentation = source.rulesPresentation ? clone(source.rulesPresentation) : undefined;
+      studioSchema = source.studioSchema ? clone(source.studioSchema) : undefined;
       referenceSheets = clone(source.referenceSheets || []);
+      forkedFromSystemId = source.id;
+      forkedFromSystemName = source.name;
     }
   }
 
@@ -1270,6 +1277,7 @@ app.post('/api/systems', requireAuth, (req, res) => {
     id: makeId('sys'),
     name,
     version: typeof body.version === 'string' ? body.version : '0.1.0',
+    description,
     author: req.currentUser.displayName,
     ownerUserId: req.currentUser.id,
     visibility: body.visibility === 'public' ? 'public' : 'private',
@@ -1280,6 +1288,13 @@ app.post('/api/systems', requireAuth, (req, res) => {
       : rulesPresentation
       ? { rulesPresentation }
       : {}),
+    ...(body.studioSchema && typeof body.studioSchema === 'object'
+      ? { studioSchema: body.studioSchema }
+      : studioSchema
+      ? { studioSchema }
+      : {}),
+    ...(forkedFromSystemId ? { forkedFromSystemId } : {}),
+    ...(forkedFromSystemName ? { forkedFromSystemName } : {}),
     referenceSheets: Array.isArray(body.referenceSheets) ? body.referenceSheets : referenceSheets,
     createdAt: nowIso(),
     updatedAt: nowIso()
@@ -1303,11 +1318,13 @@ app.patch('/api/systems/:systemId', requireAuth, (req, res) => {
   const next = {
     ...system,
     ...(typeof body.name === 'string' ? { name: body.name } : {}),
+    ...(typeof body.description === 'string' ? { description: body.description } : {}),
     ...(typeof body.version === 'string' ? { version: body.version } : {}),
     ...(typeof body.visibility === 'string' ? { visibility: body.visibility === 'private' ? 'private' : 'public' } : {}),
     ...(Array.isArray(body.tags) ? { tags: body.tags } : {}),
     ...(Array.isArray(body.rulesProgram) ? { rulesProgram: body.rulesProgram } : {}),
     ...(body.rulesPresentation && typeof body.rulesPresentation === 'object' ? { rulesPresentation: body.rulesPresentation } : {}),
+    ...(body.studioSchema && typeof body.studioSchema === 'object' ? { studioSchema: body.studioSchema } : {}),
     ...(Array.isArray(body.referenceSheets) ? { referenceSheets: body.referenceSheets } : {}),
     updatedAt: nowIso()
   };
@@ -1331,8 +1348,11 @@ app.post('/api/systems/:systemId/duplicate', requireAuth, (req, res) => {
     ...clone(source),
     id: makeId('sys'),
     name: typeof body.name === 'string' && body.name.trim() ? body.name.trim() : `${source.name} (copie)`,
+    description: typeof body.description === 'string' ? body.description : source.description || '',
     ownerUserId: req.currentUser.id,
     visibility: 'private',
+    forkedFromSystemId: source.id,
+    forkedFromSystemName: source.name,
     createdAt: nowIso(),
     updatedAt: nowIso()
   };
