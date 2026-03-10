@@ -1244,6 +1244,15 @@ body.theme-dark .system-builder__toolbar {
   gap: 0.35rem;
 }
 
+.studio-type-help {
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 0.5rem 0.55rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
 .studio-runtime {
   border: 1px solid #d0d5dd;
   border-radius: 10px;
@@ -1379,6 +1388,11 @@ body.theme-dark .studio-quick-nav a {
 }
 
 body.theme-dark .studio-tree details {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+body.theme-dark .studio-type-help {
   border-color: #334155;
   background: #0f172a;
 }

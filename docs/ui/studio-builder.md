@@ -100,6 +100,11 @@ Le convertisseur:
 - Logique visuelle: `logic_if`, `logic_then`, `logic_else`, `logic_or`, `logic_not`
 - JDR: `dice_roll`, `table`, `inventory`, `relation`
 
+Validation detaillee composant par composant:
+
+- [`catalog`](./components/catalog.md)
+- [`container`](./components/container.md)
+
 ## Proprietes (approche legere)
 
 Proprietes communes:

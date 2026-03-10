@@ -144,6 +144,38 @@ const PALETTE_TREE: Array<{ id: string; label: string; items: PaletteItem[] }> =
   }
 ];
 
+const COMPONENT_HELP: Record<StudioComponentType, { role: string; checks: string[] }> = {
+  text: { role: 'Champ texte simple.', checks: ['Label explicite', 'Placeholder utile', 'Validation si necessaire'] },
+  textarea: { role: 'Champ texte multi-ligne.', checks: ['Label explicite', 'Hauteur lisible', 'Validation si necessaire'] },
+  number: { role: 'Valeur numerique.', checks: ['Min/Max/Step coherents', 'Valeur par defaut valide'] },
+  checkbox: { role: 'Case booleenne.', checks: ['Label clair', 'Valeur par defaut correcte'] },
+  choice: { role: 'Liste de choix.', checks: ['Options non vides', 'Valeur par defaut coherente'] },
+  color: { role: 'Selection de couleur.', checks: ['Valeur par defaut lisible'] },
+  date: { role: 'Date.', checks: ['Format et valeur par defaut'] },
+  time: { role: 'Heure.', checks: ['Format et valeur par defaut'] },
+  range: { role: 'Jauge numerique.', checks: ['Min/Max/Step coherents', 'Valeur par defaut valide'] },
+  avatar: { role: 'Image/avatar.', checks: ['Label clair', 'Valeur par defaut optionnelle'] },
+  label: { role: 'Texte statique affiche.', checks: ['Texte utile', 'Pas de duplication inutile'] },
+  icon: { role: 'Element icone.', checks: ['Usage visuel justifie'] },
+  button: { role: 'Action utilisateur.', checks: ['Libelle action clair', 'Script/Template valide'] },
+  container: { role: 'Regroupe des blocs enfants.', checks: ['Label de section', 'Bordure/fond legers', 'Arborescence propre'] },
+  row: { role: 'Aligne des colonnes horizontalement.', checks: ['Colonnes ordonnees', 'Lisibilite mobile'] },
+  column: { role: 'Empile les blocs verticalement.', checks: ['Contenu coherent', 'Pas de wrappers inutiles'] },
+  tabs: { role: 'Navigation par onglets.', checks: ['Options claires', 'Ordre logique'] },
+  view: { role: 'Sous-vue logique.', checks: ['Structure claire', 'Usage necessaire'] },
+  repeater: { role: 'Liste repetable.', checks: ['Options/ligne type definies'] },
+  dice_roll: { role: 'Jet de des.', checks: ['Formule valide', 'Libelle explicite'] },
+  table: { role: 'Structure tabulaire.', checks: ['Colonnes definies', 'Usage pertinent'] },
+  inventory: { role: 'Table orientee inventaire.', checks: ['Colonnes metier claires'] },
+  relation: { role: 'Lien vers autre entite.', checks: ['Cible definie', 'Mode multiple valide'] },
+  tabs_nested: { role: 'Onglets imbriques.', checks: ['Hierarchie claire', 'Options pertinentes'] },
+  logic_if: { role: 'Condition IF.', checks: ['Condition lisible', 'Branchements complets'] },
+  logic_then: { role: 'Bloc THEN.', checks: ['Actions attendues presentes'] },
+  logic_else: { role: 'Bloc ELSE.', checks: ['Cas alternatif explicite'] },
+  logic_or: { role: 'Condition OR.', checks: ['Conditions non redondantes'] },
+  logic_not: { role: 'Condition NOT.', checks: ['Inversion justifiee'] }
+};
+
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -1026,6 +1058,25 @@ export default function SystemStudioPage() {
     }
     return selectedView.components.find((component) => component.id === selectedComponentId) ?? null;
   }, [selectedComponentId, selectedView]);
+  const selectedComponentHelp = selectedComponent ? COMPONENT_HELP[selectedComponent.type] : null;
+  const selectedComponentIsStructural = Boolean(
+    selectedComponent && (isStructuralType(selectedComponent.type) || selectedComponent.type === 'table' || selectedComponent.type === 'inventory')
+  );
+  const selectedSupportsPlaceholder = Boolean(
+    selectedComponent &&
+      ['text', 'textarea', 'number', 'choice', 'date', 'time', 'range', 'avatar', 'relation', 'button'].includes(selectedComponent.type)
+  );
+  const selectedSupportsValidation = Boolean(
+    selectedComponent &&
+      ['text', 'textarea', 'number', 'choice', 'date', 'time', 'range'].includes(selectedComponent.type)
+  );
+  const selectedSupportsDefaultValue = Boolean(
+    selectedComponent &&
+      !selectedComponentIsStructural &&
+      selectedComponent.type !== 'relation' &&
+      selectedComponent.type !== 'dice_roll' &&
+      selectedComponent.type !== 'button'
+  );
 
   const childrenByParent = useMemo(() => {
     if (!selectedView) {
@@ -2371,6 +2422,13 @@ export default function SystemStudioPage() {
                     <p style={{ margin: 0, fontSize: '0.85rem' }}>
                       Parent: <strong>{selectedComponent.parentId || 'racine'}</strong>
                     </p>
+                    {selectedComponentHelp ? (
+                      <div className="studio-type-help">
+                        <strong>Validation composant: {selectedComponent.type}</strong>
+                        <small>{selectedComponentHelp.role}</small>
+                        <small>A verifier: {selectedComponentHelp.checks.join(' | ')}</small>
+                      </div>
+                    ) : null}
                     <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
                       <Button
                         type="button"
@@ -2399,15 +2457,17 @@ export default function SystemStudioPage() {
                         disabled={!canEdit}
                       />
                     </label>
-                    <label>
-                      <span>Placeholder</span>
-                      <input
-                        type="text"
-                        value={selectedComponent.placeholder ?? ''}
-                        onChange={(event) => updateSelectedComponent((item) => ({ ...item, placeholder: event.target.value }))}
-                        disabled={!canEdit}
-                      />
-                    </label>
+                    {selectedSupportsPlaceholder ? (
+                      <label>
+                        <span>Placeholder</span>
+                        <input
+                          type="text"
+                          value={selectedComponent.placeholder ?? ''}
+                          onChange={(event) => updateSelectedComponent((item) => ({ ...item, placeholder: event.target.value }))}
+                          disabled={!canEdit}
+                        />
+                      </label>
+                    ) : null}
                     <label>
                       <span>Reference (@champ)</span>
                       <input
@@ -2438,7 +2498,7 @@ export default function SystemStudioPage() {
                         placeholder="@niveau >= 5 && @classe == 'mage'"
                       />
                     </label>
-                    {isStructuralType(selectedComponent.type) || selectedComponent.type === 'table' || selectedComponent.type === 'inventory' ? (
+                    {selectedComponentIsStructural ? (
                       <>
                         <label>
                           <span>Afficher la bordure</span>
@@ -2488,30 +2548,34 @@ export default function SystemStudioPage() {
                         </label>
                       </>
                     ) : null}
-                    <label>
-                      <span>Validation regex</span>
-                      <input
-                        type="text"
-                        value={selectedComponent.validationPattern ?? ''}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({ ...item, validationPattern: event.target.value }))
-                        }
-                        disabled={!canEdit}
-                        placeholder="^[A-Z]{2}[0-9]{3}$"
-                      />
-                    </label>
-                    <label>
-                      <span>Message validation</span>
-                      <input
-                        type="text"
-                        value={selectedComponent.validationMessage ?? ''}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({ ...item, validationMessage: event.target.value }))
-                        }
-                        disabled={!canEdit}
-                        placeholder="Format invalide"
-                      />
-                    </label>
+                    {selectedSupportsValidation ? (
+                      <>
+                        <label>
+                          <span>Validation regex</span>
+                          <input
+                            type="text"
+                            value={selectedComponent.validationPattern ?? ''}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({ ...item, validationPattern: event.target.value }))
+                            }
+                            disabled={!canEdit}
+                            placeholder="^[A-Z]{2}[0-9]{3}$"
+                          />
+                        </label>
+                        <label>
+                          <span>Message validation</span>
+                          <input
+                            type="text"
+                            value={selectedComponent.validationMessage ?? ''}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({ ...item, validationMessage: event.target.value }))
+                            }
+                            disabled={!canEdit}
+                            placeholder="Format invalide"
+                          />
+                        </label>
+                      </>
+                    ) : null}
                     {selectedComponent.type === 'button' ? (
                       <>
                         <label>
@@ -2761,7 +2825,7 @@ export default function SystemStudioPage() {
                       </label>
                     ) : null}
 
-                    {selectedComponent.type !== 'checkbox' ? (
+                    {selectedSupportsDefaultValue && selectedComponent.type !== 'checkbox' ? (
                       <label>
                         <span>Valeur par defaut</span>
                         <input
