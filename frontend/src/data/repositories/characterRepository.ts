@@ -114,5 +114,34 @@ export const characterRepository = {
     });
 
     return nextCharacter;
+  },
+
+  async updateAttributes(params: {
+    characterId: string;
+    patch: Record<string, number | string | boolean | null>;
+  }): Promise<Character | null> {
+    await ensureDatabaseIsInitialized();
+    const character = await db.characters.get(params.characterId);
+    if (!character) {
+      return null;
+    }
+
+    const nextCharacter: Character = {
+      ...character,
+      attributes: {
+        ...(character.attributes ?? {}),
+        ...params.patch
+      }
+    };
+
+    await db.characters.put(nextCharacter);
+    await localActionRepository.enqueue({
+      entityType: 'character',
+      entityId: character.id,
+      actionType: 'update',
+      payload: { attributesPatch: params.patch }
+    });
+
+    return nextCharacter;
   }
 };

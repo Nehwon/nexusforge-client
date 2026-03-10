@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { characterRepository, systemRepository } from '../../../data/repositories';
 import { applyRulesProgramToSheet, rollForAction } from '../../../services/systemRulesEngine';
 import { sendSystemMessage } from '../../../stores/chatStore';
@@ -177,6 +177,78 @@ function rollStudioDice(formula: string, values: StudioRuntimeValues): { total: 
   };
 }
 
+function studioRuntimeStorageKey(sessionId: string, viewId: string): string {
+  return `studioRuntime:${sessionId}:${viewId}`;
+}
+
+function parseStoredRuntime(raw: string | number | boolean | null | undefined): StudioRuntimeValues | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as StudioRuntimeValues) : null;
+  } catch {
+    return null;
+  }
+}
+
+function executeButtonScript(
+  script: string,
+  values: StudioRuntimeValues
+): { nextValues: StudioRuntimeValues; messages: string[] } {
+  const commands = script
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  let nextValues = { ...values };
+  const messages: string[] = [];
+
+  for (const command of commands) {
+    const rollMatch = command.match(/^roll\s+(.+)$/i);
+    if (rollMatch) {
+      const [, expr] = rollMatch;
+      const roll = rollStudioDice(expr, nextValues);
+      if (roll) {
+        messages.push(`roll ${expr} = ${roll.total} (${roll.detail})`);
+      }
+      continue;
+    }
+
+    const setMatch = command.match(/^(?:set\s+)?([A-Za-z0-9_]+)\s*=\s*(.+)$/i);
+    if (setMatch) {
+      const [, target, expr] = setMatch;
+      const result = evalFormula(expr, nextValues);
+      if (result !== null) {
+        nextValues[target] = result;
+        messages.push(`set ${target} = ${result}`);
+      }
+      continue;
+    }
+
+    const addMatch = command.match(/^add\s+([A-Za-z0-9_]+)\s+(-?\d+(?:\.\d+)?)$/i);
+    if (addMatch) {
+      const [, target, deltaRaw] = addMatch;
+      const delta = Number(deltaRaw);
+      const next = toNumeric(nextValues[target]) + delta;
+      nextValues[target] = next;
+      messages.push(`add ${target} ${delta > 0 ? '+' : ''}${delta}`);
+      continue;
+    }
+
+    const toggleMatch = command.match(/^toggle\s+([A-Za-z0-9_]+)$/i);
+    if (toggleMatch) {
+      const [, target] = toggleMatch;
+      nextValues[target] = !Boolean(nextValues[target]);
+      messages.push(`toggle ${target}`);
+      continue;
+    }
+  }
+
+  return { nextValues, messages };
+}
+
 export default function CharacterWidget({ currentUser, currentSession, role }: CharacterWidgetProps) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [currentSystem, setCurrentSystem] = useState<GameSystem | null>(null);
@@ -189,6 +261,8 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
   const [selectedStudioViewId, setSelectedStudioViewId] = useState<string>('');
   const [studioRuntimeValues, setStudioRuntimeValues] = useState<StudioRuntimeValues>({});
   const [lastStudioRollResult, setLastStudioRollResult] = useState<string | null>(null);
+  const persistRuntimeTimeoutRef = useRef<number | null>(null);
+  const lastPersistedRuntimeRef = useRef<string>('');
 
   useEffect(() => {
     let isMounted = true;
@@ -286,9 +360,60 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
       acc[component.key] = defaultStudioValue(component);
       return acc;
     }, {});
-    setStudioRuntimeValues(applyStudioFormulas(selectedStudioView.components, base));
+    const key = studioRuntimeStorageKey(currentSession.id, selectedStudioView.id);
+    const stored = parseStoredRuntime(selectedCharacter?.attributes?.[key]);
+    const merged = {
+      ...base,
+      ...(stored ?? {})
+    };
+    const computed = applyStudioFormulas(selectedStudioView.components, merged);
+    setStudioRuntimeValues(computed);
+    lastPersistedRuntimeRef.current = JSON.stringify(computed);
     setLastStudioRollResult(null);
-  }, [selectedStudioView?.id, selectedStudioView?.components]);
+  }, [currentSession.id, selectedCharacter?.id, selectedCharacter?.attributes, selectedStudioView?.id, selectedStudioView?.components]);
+
+  useEffect(() => {
+    if (!selectedCharacter || !selectedStudioView) {
+      return;
+    }
+
+    const serialized = JSON.stringify(studioRuntimeValues);
+    if (serialized === lastPersistedRuntimeRef.current) {
+      return;
+    }
+
+    if (persistRuntimeTimeoutRef.current !== null) {
+      window.clearTimeout(persistRuntimeTimeoutRef.current);
+    }
+
+    persistRuntimeTimeoutRef.current = window.setTimeout(() => {
+      const key = studioRuntimeStorageKey(currentSession.id, selectedStudioView.id);
+      void characterRepository
+        .updateAttributes({
+          characterId: selectedCharacter.id,
+          patch: {
+            [key]: serialized
+          }
+        })
+        .then((updated) => {
+          if (!updated) {
+            return;
+          }
+          lastPersistedRuntimeRef.current = serialized;
+          setCharacters((previous) => previous.map((character) => (character.id === updated.id ? updated : character)));
+        })
+        .catch(() => {
+          // keep runtime local even if persistence fails
+        });
+    }, 1200);
+
+    return () => {
+      if (persistRuntimeTimeoutRef.current !== null) {
+        window.clearTimeout(persistRuntimeTimeoutRef.current);
+        persistRuntimeTimeoutRef.current = null;
+      }
+    };
+  }, [currentSession.id, selectedCharacter, selectedStudioView, studioRuntimeValues]);
 
   const handleResourceDelta = async (fieldId: string, delta: number) => {
     if (!selectedCharacter || !selectedSheet) {
@@ -382,6 +507,33 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
       [component.key]: value
     });
     setStudioRuntimeValues(next);
+  };
+
+  const handleStudioButtonAction = (
+    component: NonNullable<GameSystem['studioSchema']>['views'][number]['components'][number]
+  ) => {
+    if (!selectedStudioView) {
+      return;
+    }
+
+    const script = component.formula?.trim() || '';
+    if (!script) {
+      setLastStudioRollResult('Aucun script/formule sur ce bouton.');
+      return;
+    }
+
+    const { nextValues, messages } = executeButtonScript(script, studioRuntimeValues);
+    const computed = applyStudioFormulas(selectedStudioView.components, nextValues);
+    setStudioRuntimeValues(computed);
+
+    const message = messages.length > 0 ? messages.join(' | ') : `script execute: ${script}`;
+    setLastStudioRollResult(`${component.label}: ${message}`);
+
+    sendSystemMessage({
+      sessionId: currentSession.id,
+      content: `[Studio] ${selectedCharacter?.name || 'Personnage'} -> ${component.label}: ${message}`,
+      systemType: 'roll'
+    });
   };
 
   return (
@@ -579,6 +731,16 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
                           ))}
                         </select>
                       ) : null}
+                      {component.type === 'button' ? (
+                        <button
+                          className="button secondary"
+                          onClick={() => {
+                            handleStudioButtonAction(component);
+                          }}
+                        >
+                          {String(component.defaultValue || component.label || 'Action')}
+                        </button>
+                      ) : null}
                       {component.type === 'dice_roll' ? (
                         <button
                           className="button secondary"
@@ -588,7 +750,13 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
                               setLastStudioRollResult(`Jet invalide: ${component.diceFormula || component.formula || ''}`);
                               return;
                             }
-                            setLastStudioRollResult(`${component.label}: ${result.total} (${result.detail})`);
+                            const text = `${selectedCharacter?.name || 'Personnage'} lance ${component.label}: ${result.total} (${result.detail})`;
+                            setLastStudioRollResult(text);
+                            sendSystemMessage({
+                              sessionId: currentSession.id,
+                              content: `[Studio] ${text}`,
+                              systemType: 'roll'
+                            });
                           }}
                         >
                           Lancer ({component.diceFormula || component.formula || '1d20'})

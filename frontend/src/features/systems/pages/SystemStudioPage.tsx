@@ -308,6 +308,8 @@ export default function SystemStudioPage() {
   const [rightPanelWidth, setRightPanelWidth] = useState(330);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const lastSavedSchemaRef = useRef<string>('');
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
 
@@ -345,6 +347,8 @@ export default function SystemStudioPage() {
         const normalized = ensureSchema(loaded);
         setSystem(loaded);
         setSchema(normalized);
+        lastSavedSchemaRef.current = JSON.stringify(normalized);
+        setIsDirty(false);
         setSelectedViewId(normalized.views[0]?.id ?? '');
       } catch (error) {
         if (isMounted) {
@@ -398,7 +402,14 @@ export default function SystemStudioPage() {
   }, [selectedViewId, selectedView?.components]);
 
   const updateSchema = (update: (current: StudioSchema) => StudioSchema) => {
-    setSchema((current) => (current ? update(current) : current));
+    setSchema((current) => {
+      if (!current) {
+        return current;
+      }
+      const next = update(current);
+      setIsDirty(true);
+      return next;
+    });
   };
 
   const updateSelectedView = (update: (view: StudioViewDefinition) => StudioViewDefinition) => {
@@ -558,6 +569,7 @@ export default function SystemStudioPage() {
     }
     const view: StudioViewDefinition = { id: makeId('view'), name: `Vue ${schema.views.length + 1}`, components: [] };
     setSchema({ ...schema, views: [...schema.views, view] });
+    setIsDirty(true);
     setSelectedViewId(view.id);
     setSelectedComponentId('');
   };
@@ -568,6 +580,7 @@ export default function SystemStudioPage() {
     }
     const nextViews = schema.views.filter((view) => view.id !== selectedView.id);
     setSchema({ ...schema, views: nextViews });
+    setIsDirty(true);
     setSelectedViewId(nextViews[0]?.id ?? '');
     setSelectedComponentId('');
   };
@@ -580,24 +593,46 @@ export default function SystemStudioPage() {
     setSelectedComponentId('');
   };
 
-  const saveStudio = async () => {
+  const saveStudio = async (options?: { auto?: boolean }) => {
     if (!currentUser || !system || !schema || !canEdit) {
       return;
     }
     setErrorMessage(null);
-    setStatusMessage(null);
+    if (!options?.auto) {
+      setStatusMessage(null);
+    }
     setIsSaving(true);
     try {
       const nextSystem: GameSystem = { ...system, studioSchema: schema };
       await systemRepository.upsert(nextSystem, currentUser);
       setSystem(nextSystem);
-      setStatusMessage('Studio sauvegarde.');
+      lastSavedSchemaRef.current = JSON.stringify(schema);
+      setIsDirty(false);
+      setStatusMessage(options?.auto ? 'Sauvegarde auto effectuee.' : 'Studio sauvegarde.');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Sauvegarde impossible.');
     } finally {
       setIsSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (!canEdit) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      if (!schema || isSaving || !isDirty) {
+        return;
+      }
+      const currentSnapshot = JSON.stringify(schema);
+      if (currentSnapshot === lastSavedSchemaRef.current) {
+        setIsDirty(false);
+        return;
+      }
+      void saveStudio({ auto: true });
+    }, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [canEdit, isDirty, isSaving, schema, currentUser, system]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -643,6 +678,11 @@ export default function SystemStudioPage() {
             {!canEdit ? <p style={{ marginBottom: 0, color: '#b42318' }}>Lecture seule: proprietaire/admin uniquement.</p> : null}
             {statusMessage ? <p style={{ marginBottom: 0, color: '#067647' }}>{statusMessage}</p> : null}
             {errorMessage ? <p style={{ marginBottom: 0, color: '#b42318' }}>{errorMessage}</p> : null}
+            {canEdit ? (
+              <p style={{ marginBottom: 0, opacity: 0.85 }}>
+                {isDirty ? 'Modifications en attente (autosave: 60s).' : 'Studio a jour.'}
+              </p>
+            ) : null}
           </section>
 
           <section className={isFullscreen ? 'studio-fullscreen' : ''}>
