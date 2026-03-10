@@ -25,8 +25,8 @@
 ## Layout / structure
 
 - `container`: groupe logique
-- `row`: ligne horizontale
-- `column`: colonne verticale
+- `row`: ligne horizontale ([details](./row.md))
+- `column`: colonne verticale ([details](./column.md))
 - `tabs`: onglets
 - `tabs_nested`: onglets imbriques
 - `view`: sous-vue
@@ -43,9 +43,19 @@
 ## JDR
 
 - `dice_roll`: jet de des
-- `table`: tableau
+- `table`: tableau ([details](./table.md))
 - `inventory`: inventaire
 - `relation`: reference croisee
+
+## Difference importante: `row/column` vs `table/inventory`
+
+- `row/column`: presentation visuelle libre (layout).
+- `table/inventory`: donnees tabulaires repetables (lignes/colonnes metier).
+
+Choix rapide:
+
+- "Je compose l ecran" -> `row/column`
+- "Je stocke une liste de donnees" -> `table/inventory`
 
 ## Proprietes communes (minimales)
 

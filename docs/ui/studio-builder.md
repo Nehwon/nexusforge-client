@@ -104,6 +104,23 @@ Validation detaillee composant par composant:
 
 - [`catalog`](./components/catalog.md)
 - [`container`](./components/container.md)
+- [`row`](./components/row.md)
+- [`column`](./components/column.md)
+- [`table`](./components/table.md)
+
+## Difference `row/column` vs `table/inventory`
+
+- `row/column`:
+  - sert a composer la mise en page visuelle.
+  - exemple: mettre "Physiques / Mentales / Esoteriques" cote a cote.
+- `table/inventory`:
+  - sert a stocker des donnees repetables en lignes.
+  - exemple: liste d objets, ressources, effets.
+
+Regle simple:
+
+- besoin de presentation -> `row/column`
+- besoin de donnees tabulaires -> `table/inventory`
 
 ## Proprietes (approche legere)
 
