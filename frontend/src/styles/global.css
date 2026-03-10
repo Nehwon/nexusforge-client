@@ -1008,6 +1008,28 @@ body.theme-dark .system-builder__toolbar {
   gap: 0.35rem;
 }
 
+.studio-runtime {
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  padding: 0.7rem;
+  background: #ffffff;
+}
+
+.studio-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.6rem;
+}
+
+.studio-runtime-item {
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: #f8fafc;
+  display: grid;
+  gap: 0.35rem;
+}
+
 .studio-splitter {
   width: 8px;
   border-radius: 999px;
@@ -1051,6 +1073,16 @@ body.theme-dark .studio-component-card {
 
 body.theme-dark .studio-component-card.is-drag-over {
   background: #1e293b;
+}
+
+body.theme-dark .studio-runtime {
+  border-color: #334155;
+  background: #111827;
+}
+
+body.theme-dark .studio-runtime-item {
+  border-color: #334155;
+  background: #0f172a;
 }
 
 body.theme-dark .studio-splitter {

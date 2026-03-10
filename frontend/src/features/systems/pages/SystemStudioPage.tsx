@@ -12,7 +12,16 @@ import {
   StudioViewDefinition
 } from '../../../types/system';
 
-type PaletteItem = { type: StudioComponentType; label: string; defaultValue?: string | number | boolean; options?: string[] };
+type RuntimeValue = string | number | boolean | string[] | Array<Record<string, string>>;
+type RuntimeValues = Record<string, RuntimeValue>;
+
+type PaletteItem = {
+  type: StudioComponentType;
+  label: string;
+  defaultValue?: string | number | boolean;
+  options?: string[];
+};
+
 const STUDIO_LEFT_WIDTH_KEY = 'nexusforge.studio.leftWidth';
 const STUDIO_RIGHT_WIDTH_KEY = 'nexusforge.studio.rightWidth';
 const STUDIO_FULLSCREEN_KEY = 'nexusforge.studio.fullscreen';
@@ -25,14 +34,14 @@ const PALETTE_TREE: Array<{ id: string; label: string; items: PaletteItem[] }> =
       { type: 'text', label: 'Texte', defaultValue: '' },
       { type: 'textarea', label: 'Texte multi-ligne', defaultValue: '' },
       { type: 'number', label: 'Nombre', defaultValue: 0 },
-      { type: 'checkbox', label: 'Case à cocher', defaultValue: false },
+      { type: 'checkbox', label: 'Case a cocher', defaultValue: false },
       { type: 'choice', label: 'Choix (liste)', options: ['Option A', 'Option B'] },
       { type: 'range', label: 'Jauge (range)', defaultValue: 0 }
     ]
   },
   {
     id: 'advanced-inputs',
-    label: 'Champs avancés',
+    label: 'Champs avances',
     items: [
       { type: 'color', label: 'Couleur', defaultValue: '#ffffff' },
       { type: 'date', label: 'Date' },
@@ -115,16 +124,123 @@ function createComponentFromPalette(item: PaletteItem): StudioComponentDefinitio
   };
 }
 
+function defaultRuntimeValue(component: StudioComponentDefinition): RuntimeValue {
+  if (component.type === 'checkbox') {
+    return Boolean(component.defaultValue);
+  }
+  if (component.type === 'number' || component.type === 'range') {
+    return typeof component.defaultValue === 'number' ? component.defaultValue : 0;
+  }
+  if (component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested') {
+    return typeof component.defaultValue === 'string' ? component.defaultValue : component.options?.[0] ?? '';
+  }
+  if (component.type === 'table' || component.type === 'inventory') {
+    return [];
+  }
+  if (component.type === 'relation') {
+    return component.allowMultiple ? [] : '';
+  }
+  return typeof component.defaultValue === 'string' ? component.defaultValue : '';
+}
+
+function buildInitialRuntimeValues(view: StudioViewDefinition | null): RuntimeValues {
+  if (!view) {
+    return {};
+  }
+  return view.components.reduce<RuntimeValues>((acc, component) => {
+    acc[component.key] = defaultRuntimeValue(component);
+    return acc;
+  }, {});
+}
+
+function toNumber(value: RuntimeValue | undefined): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (typeof value === 'boolean') {
+    return value ? 1 : 0;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function evaluateMathExpression(expression: string, values: RuntimeValues): number | null {
+  const withValues = expression.replace(/@([A-Za-z0-9_]+)/g, (_, key: string) => String(toNumber(values[key])));
+  if (!/^[0-9+\-*/().\s]+$/.test(withValues)) {
+    return null;
+  }
+  try {
+    const result = new Function(`return (${withValues});`)();
+    return typeof result === 'number' && Number.isFinite(result) ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyDerivedFormulas(components: StudioComponentDefinition[], values: RuntimeValues): RuntimeValues {
+  let next = { ...values };
+  for (let i = 0; i < 4; i += 1) {
+    let changed = false;
+    for (const component of components) {
+      if (!component.formula?.trim()) {
+        continue;
+      }
+      const result = evaluateMathExpression(component.formula.trim(), next);
+      if (result === null) {
+        continue;
+      }
+      if (next[component.key] !== result) {
+        next[component.key] = result;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      break;
+    }
+  }
+  return next;
+}
+
+function rollDice(formula: string, values: RuntimeValues): { total: number; detail: string } | null {
+  const raw = formula.trim().replace(/@([A-Za-z0-9_]+)/g, (_, key: string) => String(toNumber(values[key])));
+  const compact = raw.replace(/\s+/g, '');
+  const match = compact.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+  if (!match) {
+    const fallback = evaluateMathExpression(compact, values);
+    if (fallback === null) {
+      return null;
+    }
+    return { total: fallback, detail: compact };
+  }
+
+  const diceCount = Math.max(1, Number(match[1] || '1'));
+  const diceSides = Math.max(2, Number(match[2]));
+  const modifier = Number(match[3] || '0');
+  const rolls = Array.from({ length: diceCount }, () => 1 + Math.floor(Math.random() * diceSides));
+  const total = rolls.reduce((sum, roll) => sum + roll, 0) + modifier;
+  const detail = `${rolls.join(' + ')}${modifier ? ` ${modifier > 0 ? '+' : '-'} ${Math.abs(modifier)}` : ''}`;
+  return { total, detail };
+}
+
 function renderComponentPreview(component: StudioComponentDefinition): JSX.Element {
   if (component.type === 'checkbox') {
-    return <label><input type="checkbox" disabled checked={Boolean(component.defaultValue)} /> {component.label}</label>;
+    return (
+      <label>
+        <input type="checkbox" disabled checked={Boolean(component.defaultValue)} /> {component.label}
+      </label>
+    );
   }
   if (component.type === 'choice') {
     return (
       <select disabled defaultValue="">
         <option value="">{component.placeholder || 'Choisir'}</option>
         {(component.options ?? []).map((option) => (
-          <option key={option} value={option}>{option}</option>
+          <option key={option} value={option}>
+            {option}
+          </option>
         ))}
       </select>
     );
@@ -133,7 +249,16 @@ function renderComponentPreview(component: StudioComponentDefinition): JSX.Eleme
     return <textarea disabled rows={2} placeholder={component.placeholder || component.label} />;
   }
   if (component.type === 'range') {
-    return <input type="range" disabled min={component.min ?? 0} max={component.max ?? 100} step={component.step ?? 1} value={typeof component.defaultValue === 'number' ? component.defaultValue : 0} />;
+    return (
+      <input
+        type="range"
+        disabled
+        min={component.min ?? 0}
+        max={component.max ?? 100}
+        step={component.step ?? 1}
+        value={typeof component.defaultValue === 'number' ? component.defaultValue : 0}
+      />
+    );
   }
   if (component.type === 'dice_roll') {
     return <code>{component.diceFormula || component.formula || '1d20'}</code>;
@@ -143,7 +268,9 @@ function renderComponentPreview(component: StudioComponentDefinition): JSX.Eleme
     return (
       <div style={{ display: 'grid', gap: '0.2rem' }}>
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${headers.length}, minmax(0, 1fr))`, gap: '0.25rem', fontSize: '0.75rem' }}>
-          {headers.map((header) => <strong key={header}>{header}</strong>)}
+          {headers.map((header) => (
+            <strong key={header}>{header}</strong>
+          ))}
         </div>
       </div>
     );
@@ -152,7 +279,11 @@ function renderComponentPreview(component: StudioComponentDefinition): JSX.Eleme
     return <code>ref: {component.relationTarget || 'target'}</code>;
   }
   if (component.type === 'button') {
-    return <button className="button secondary" type="button" disabled>{String(component.defaultValue || component.label || 'Action')}</button>;
+    return (
+      <button className="button secondary" type="button" disabled>
+        {String(component.defaultValue || component.label || 'Action')}
+      </button>
+    );
   }
   return <input type={component.type === 'number' ? 'number' : 'text'} disabled placeholder={component.placeholder || component.label} />;
 }
@@ -167,6 +298,9 @@ export default function SystemStudioPage() {
   const [selectedViewId, setSelectedViewId] = useState('');
   const [selectedComponentId, setSelectedComponentId] = useState('');
   const [dragOverComponentId, setDragOverComponentId] = useState<string | null>(null);
+  const [runtimeValues, setRuntimeValues] = useState<RuntimeValues>({});
+  const [runtimeMessage, setRuntimeMessage] = useState<string | null>(null);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -174,6 +308,22 @@ export default function SystemStudioPage() {
   const [rightPanelWidth, setRightPanelWidth] = useState(330);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
+
+  const selectedView = useMemo(() => {
+    if (!schema) {
+      return null;
+    }
+    return schema.views.find((view) => view.id === selectedViewId) ?? schema.views[0] ?? null;
+  }, [schema, selectedViewId]);
+
+  const selectedComponent = useMemo(() => {
+    if (!selectedView) {
+      return null;
+    }
+    return selectedView.components.find((component) => component.id === selectedComponentId) ?? null;
+  }, [selectedComponentId, selectedView]);
 
   useEffect(() => {
     let isMounted = true;
@@ -240,21 +390,12 @@ export default function SystemStudioPage() {
     localStorage.setItem(STUDIO_FULLSCREEN_KEY, isFullscreen ? 'true' : 'false');
   }, [isFullscreen]);
 
-  const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
-
-  const selectedView = useMemo(() => {
-    if (!schema) {
-      return null;
-    }
-    return schema.views.find((view) => view.id === selectedViewId) ?? schema.views[0] ?? null;
-  }, [schema, selectedViewId]);
-
-  const selectedComponent = useMemo(() => {
-    if (!selectedView) {
-      return null;
-    }
-    return selectedView.components.find((component) => component.id === selectedComponentId) ?? null;
-  }, [selectedComponentId, selectedView]);
+  useEffect(() => {
+    const initial = buildInitialRuntimeValues(selectedView);
+    const withDerived = selectedView ? applyDerivedFormulas(selectedView.components, initial) : initial;
+    setRuntimeValues(withDerived);
+    setRuntimeMessage(null);
+  }, [selectedViewId, selectedView?.components]);
 
   const updateSchema = (update: (current: StudioSchema) => StudioSchema) => {
     setSchema((current) => (current ? update(current) : current));
@@ -278,6 +419,17 @@ export default function SystemStudioPage() {
       ...view,
       components: view.components.map((item) => (item.id === selectedComponent.id ? update(item) : item))
     }));
+  };
+
+  const setRuntimeValue = (component: StudioComponentDefinition, value: RuntimeValue) => {
+    if (!selectedView) {
+      return;
+    }
+    const next = applyDerivedFormulas(selectedView.components, {
+      ...runtimeValues,
+      [component.key]: value
+    });
+    setRuntimeValues(next);
   };
 
   const startResizing = (side: 'left' | 'right', event: ReactMouseEvent<HTMLDivElement>) => {
@@ -458,9 +610,12 @@ export default function SystemStudioPage() {
     return () => window.removeEventListener('keydown', onKeyDown);
   });
 
-  const layoutStyle = typeof window !== 'undefined' && window.innerWidth > 900
-    ? { gridTemplateColumns: `${leftPanelWidth}px 8px minmax(420px, 1fr) 8px ${rightPanelWidth}px` }
-    : undefined;
+  const layoutStyle =
+    typeof window !== 'undefined' && window.innerWidth > 900
+      ? { gridTemplateColumns: `${leftPanelWidth}px 8px minmax(420px, 1fr) 8px ${rightPanelWidth}px` }
+      : undefined;
+
+  const relationTargets = selectedView?.components.map((component) => component.key) ?? [];
 
   return (
     <Layout wide>
@@ -545,7 +700,12 @@ export default function SystemStudioPage() {
                     <Button type="button" variant="secondary" onClick={addView} disabled={!canEdit}>
                       + Vue
                     </Button>
-                    <Button type="button" variant="secondary" onClick={removeSelectedView} disabled={!canEdit || (schema?.views.length ?? 0) <= 1}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={removeSelectedView}
+                      disabled={!canEdit || (schema?.views.length ?? 0) <= 1}
+                    >
                       Supprimer vue
                     </Button>
                   </div>
@@ -571,7 +731,9 @@ export default function SystemStudioPage() {
                           {selectedView.components.map((component) => (
                             <article
                               key={component.id}
-                              className={`studio-component-card ${selectedComponentId === component.id ? 'is-selected' : ''} ${dragOverComponentId === component.id ? 'is-drag-over' : ''}`}
+                              className={`studio-component-card ${selectedComponentId === component.id ? 'is-selected' : ''} ${
+                                dragOverComponentId === component.id ? 'is-drag-over' : ''
+                              }`}
                               draggable={canEdit}
                               onDragStart={(event) => handleComponentDragStart(event, component.id)}
                               onDragOver={(event) => {
@@ -597,6 +759,115 @@ export default function SystemStudioPage() {
                     <p style={{ margin: 0 }}>Aucune vue disponible.</p>
                   )}
                 </div>
+
+                <section className="studio-runtime">
+                  <h3 style={{ marginTop: 0 }}>Apercu runtime (calculs / references / des)</h3>
+                  {runtimeMessage ? <p style={{ marginTop: 0 }}>{runtimeMessage}</p> : null}
+                  {!selectedView || selectedView.components.length === 0 ? (
+                    <p style={{ margin: 0 }}>Ajoute des composants pour voir un rendu interactif.</p>
+                  ) : (
+                    <div className="studio-runtime-grid">
+                      {selectedView.components.map((component) => {
+                        const value = runtimeValues[component.key];
+                        return (
+                          <article key={`runtime-${component.id}`} className="studio-runtime-item">
+                            <strong>{component.label || component.key}</strong>
+                            <small>{component.key}</small>
+                            {component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar' ? (
+                              <input
+                                type={component.type === 'color' ? 'color' : component.type === 'date' ? 'date' : component.type === 'time' ? 'time' : 'text'}
+                                value={typeof value === 'string' ? value : ''}
+                                onChange={(event) => setRuntimeValue(component, event.target.value)}
+                              />
+                            ) : null}
+                            {component.type === 'textarea' ? (
+                              <textarea rows={2} value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)} />
+                            ) : null}
+                            {component.type === 'number' || component.type === 'range' ? (
+                              <input
+                                type={component.type === 'number' ? 'number' : 'range'}
+                                min={component.min ?? 0}
+                                max={component.max ?? 100}
+                                step={component.step ?? 1}
+                                value={typeof value === 'number' ? value : 0}
+                                onChange={(event) => setRuntimeValue(component, Number(event.target.value))}
+                              />
+                            ) : null}
+                            {component.type === 'checkbox' ? (
+                              <label>
+                                <input type="checkbox" checked={Boolean(value)} onChange={(event) => setRuntimeValue(component, event.target.checked)} /> active
+                              </label>
+                            ) : null}
+                            {component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested' ? (
+                              <select value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)}>
+                                {(component.options ?? []).map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : null}
+                            {component.type === 'button' ? <button className="button secondary">{String(component.defaultValue || component.label || 'Action')}</button> : null}
+                            {component.type === 'label' ? <p style={{ margin: 0 }}>{String(component.defaultValue || component.label || '')}</p> : null}
+                            {component.type === 'dice_roll' ? (
+                              <button
+                                className="button secondary"
+                                onClick={() => {
+                                  const result = rollDice(component.diceFormula || component.formula || '1d20', runtimeValues);
+                                  if (!result) {
+                                    setRuntimeMessage(`Jet invalide: ${component.diceFormula || component.formula || ''}`);
+                                    return;
+                                  }
+                                  setRuntimeMessage(`Jet ${component.label}: ${result.total} (${result.detail})`);
+                                }}
+                              >
+                                Lancer ({component.diceFormula || component.formula || '1d20'})
+                              </button>
+                            ) : null}
+                            {component.type === 'table' || component.type === 'inventory' ? (
+                              <div style={{ display: 'grid', gap: '0.3rem' }}>
+                                <code>{(component.columns ?? []).join(' | ')}</code>
+                                <button
+                                  className="button secondary"
+                                  onClick={() => {
+                                    const columns = component.columns ?? ['Nom', 'Valeur'];
+                                    const row = columns.reduce<Record<string, string>>((acc, column) => {
+                                      acc[column] = '';
+                                      return acc;
+                                    }, {});
+                                    const rows = Array.isArray(value) ? (value as Array<Record<string, string>>) : [];
+                                    setRuntimeValue(component, [...rows, row]);
+                                  }}
+                                >
+                                  Ajouter ligne
+                                </button>
+                                <small>Lignes: {Array.isArray(value) ? value.length : 0}</small>
+                              </div>
+                            ) : null}
+                            {component.type === 'relation' ? (
+                              <div style={{ display: 'grid', gap: '0.25rem' }}>
+                                <select
+                                  value={typeof value === 'string' ? value : ''}
+                                  onChange={(event) => setRuntimeValue(component, event.target.value)}
+                                >
+                                  <option value="">Cible</option>
+                                  {relationTargets.map((target) => (
+                                    <option key={target} value={target}>
+                                      {target}
+                                    </option>
+                                  ))}
+                                </select>
+                                <small>target: {component.relationTarget || '(non defini)'}</small>
+                              </div>
+                            ) : null}
+                            {component.formula ? <small>formule: {component.formula}</small> : null}
+                            {component.reference ? <small>ref: {component.reference}</small> : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
               </section>
 
               <div className="studio-splitter" onMouseDown={(event) => startResizing('right', event)} title="Redimensionner" />
@@ -605,47 +876,95 @@ export default function SystemStudioPage() {
                 <h2 style={{ marginTop: 0 }}>Proprietes</h2>
                 {selectedComponent ? (
                   <div className="studio-properties">
-                    <p style={{ margin: 0, fontSize: '0.85rem' }}>Type: <strong>{selectedComponent.type}</strong></p>
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                      Type: <strong>{selectedComponent.type}</strong>
+                    </p>
                     <label>
                       <span>Label</span>
-                      <input type="text" value={selectedComponent.label} onChange={(event) => updateSelectedComponent((item) => ({ ...item, label: event.target.value }))} disabled={!canEdit} />
+                      <input
+                        type="text"
+                        value={selectedComponent.label}
+                        onChange={(event) => updateSelectedComponent((item) => ({ ...item, label: event.target.value }))}
+                        disabled={!canEdit}
+                      />
                     </label>
                     <label>
                       <span>Cle technique</span>
-                      <input type="text" value={selectedComponent.key} onChange={(event) => updateSelectedComponent((item) => ({ ...item, key: event.target.value }))} disabled={!canEdit} />
+                      <input
+                        type="text"
+                        value={selectedComponent.key}
+                        onChange={(event) => updateSelectedComponent((item) => ({ ...item, key: event.target.value }))}
+                        disabled={!canEdit}
+                      />
                     </label>
                     <label>
                       <span>Placeholder</span>
-                      <input type="text" value={selectedComponent.placeholder ?? ''} onChange={(event) => updateSelectedComponent((item) => ({ ...item, placeholder: event.target.value }))} disabled={!canEdit} />
+                      <input
+                        type="text"
+                        value={selectedComponent.placeholder ?? ''}
+                        onChange={(event) => updateSelectedComponent((item) => ({ ...item, placeholder: event.target.value }))}
+                        disabled={!canEdit}
+                      />
                     </label>
                     <label>
                       <span>Reference (@champ)</span>
-                      <input type="text" value={selectedComponent.reference ?? ''} onChange={(event) => updateSelectedComponent((item) => ({ ...item, reference: event.target.value }))} disabled={!canEdit} placeholder="@force" />
+                      <input
+                        type="text"
+                        value={selectedComponent.reference ?? ''}
+                        onChange={(event) => updateSelectedComponent((item) => ({ ...item, reference: event.target.value }))}
+                        disabled={!canEdit}
+                        placeholder="@force"
+                      />
                     </label>
                     <label>
                       <span>Formule</span>
-                      <input type="text" value={selectedComponent.formula ?? ''} onChange={(event) => updateSelectedComponent((item) => ({ ...item, formula: event.target.value }))} disabled={!canEdit} placeholder="@force + @agilite" />
+                      <input
+                        type="text"
+                        value={selectedComponent.formula ?? ''}
+                        onChange={(event) => updateSelectedComponent((item) => ({ ...item, formula: event.target.value }))}
+                        disabled={!canEdit}
+                        placeholder="@force + @agilite"
+                      />
                     </label>
 
-                    {(selectedComponent.type === 'choice' || selectedComponent.type === 'tabs' || selectedComponent.type === 'repeater' || selectedComponent.type === 'tabs_nested') ? (
+                    {selectedComponent.type === 'choice' ||
+                    selectedComponent.type === 'tabs' ||
+                    selectedComponent.type === 'tabs_nested' ||
+                    selectedComponent.type === 'repeater' ? (
                       <label>
                         <span>Options (une par ligne)</span>
                         <textarea
                           rows={4}
                           value={(selectedComponent.options ?? []).join('\n')}
-                          onChange={(event) => updateSelectedComponent((item) => ({ ...item, options: event.target.value.split('\n').map((line) => line.trim()).filter(Boolean) }))}
+                          onChange={(event) =>
+                            updateSelectedComponent((item) => ({
+                              ...item,
+                              options: event.target.value
+                                .split('\n')
+                                .map((line) => line.trim())
+                                .filter(Boolean)
+                            }))
+                          }
                           disabled={!canEdit}
                         />
                       </label>
                     ) : null}
 
-                    {(selectedComponent.type === 'table' || selectedComponent.type === 'inventory') ? (
+                    {selectedComponent.type === 'table' || selectedComponent.type === 'inventory' ? (
                       <label>
                         <span>Colonnes (une par ligne)</span>
                         <textarea
                           rows={4}
                           value={(selectedComponent.columns ?? []).join('\n')}
-                          onChange={(event) => updateSelectedComponent((item) => ({ ...item, columns: event.target.value.split('\n').map((line) => line.trim()).filter(Boolean) }))}
+                          onChange={(event) =>
+                            updateSelectedComponent((item) => ({
+                              ...item,
+                              columns: event.target.value
+                                .split('\n')
+                                .map((line) => line.trim())
+                                .filter(Boolean)
+                            }))
+                          }
                           disabled={!canEdit}
                         />
                       </label>
@@ -671,7 +990,9 @@ export default function SystemStudioPage() {
                           <input
                             type="text"
                             value={selectedComponent.relationTarget ?? ''}
-                            onChange={(event) => updateSelectedComponent((item) => ({ ...item, relationTarget: event.target.value }))}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({ ...item, relationTarget: event.target.value }))
+                            }
                             disabled={!canEdit}
                             placeholder="character|item|npc"
                           />
@@ -680,7 +1001,9 @@ export default function SystemStudioPage() {
                           <span>Liens multiples</span>
                           <select
                             value={String(Boolean(selectedComponent.allowMultiple))}
-                            onChange={(event) => updateSelectedComponent((item) => ({ ...item, allowMultiple: event.target.value === 'true' }))}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({ ...item, allowMultiple: event.target.value === 'true' }))
+                            }
                             disabled={!canEdit}
                           >
                             <option value="false">Non</option>
@@ -690,19 +1013,34 @@ export default function SystemStudioPage() {
                       </>
                     ) : null}
 
-                    {(selectedComponent.type === 'number' || selectedComponent.type === 'range') ? (
+                    {selectedComponent.type === 'number' || selectedComponent.type === 'range' ? (
                       <>
                         <label>
                           <span>Min</span>
-                          <input type="number" value={selectedComponent.min ?? 0} onChange={(event) => updateSelectedComponent((item) => ({ ...item, min: Number(event.target.value) }))} disabled={!canEdit} />
+                          <input
+                            type="number"
+                            value={selectedComponent.min ?? 0}
+                            onChange={(event) => updateSelectedComponent((item) => ({ ...item, min: Number(event.target.value) }))}
+                            disabled={!canEdit}
+                          />
                         </label>
                         <label>
                           <span>Max</span>
-                          <input type="number" value={selectedComponent.max ?? 100} onChange={(event) => updateSelectedComponent((item) => ({ ...item, max: Number(event.target.value) }))} disabled={!canEdit} />
+                          <input
+                            type="number"
+                            value={selectedComponent.max ?? 100}
+                            onChange={(event) => updateSelectedComponent((item) => ({ ...item, max: Number(event.target.value) }))}
+                            disabled={!canEdit}
+                          />
                         </label>
                         <label>
                           <span>Step</span>
-                          <input type="number" value={selectedComponent.step ?? 1} onChange={(event) => updateSelectedComponent((item) => ({ ...item, step: Number(event.target.value) }))} disabled={!canEdit} />
+                          <input
+                            type="number"
+                            value={selectedComponent.step ?? 1}
+                            onChange={(event) => updateSelectedComponent((item) => ({ ...item, step: Number(event.target.value) }))}
+                            disabled={!canEdit}
+                          />
                         </label>
                       </>
                     ) : null}
@@ -710,7 +1048,13 @@ export default function SystemStudioPage() {
                     {selectedComponent.type === 'checkbox' ? (
                       <label>
                         <span>Valeur par defaut</span>
-                        <select value={String(Boolean(selectedComponent.defaultValue))} onChange={(event) => updateSelectedComponent((item) => ({ ...item, defaultValue: event.target.value === 'true' }))} disabled={!canEdit}>
+                        <select
+                          value={String(Boolean(selectedComponent.defaultValue))}
+                          onChange={(event) =>
+                            updateSelectedComponent((item) => ({ ...item, defaultValue: event.target.value === 'true' }))
+                          }
+                          disabled={!canEdit}
+                        >
                           <option value="false">False</option>
                           <option value="true">True</option>
                         </select>
@@ -722,11 +1066,22 @@ export default function SystemStudioPage() {
                         <span>Valeur par defaut</span>
                         <input
                           type={selectedComponent.type === 'number' || selectedComponent.type === 'range' ? 'number' : 'text'}
-                          value={typeof selectedComponent.defaultValue === 'number' ? selectedComponent.defaultValue : typeof selectedComponent.defaultValue === 'string' ? selectedComponent.defaultValue : ''}
-                          onChange={(event) => updateSelectedComponent((item) => ({
-                            ...item,
-                            defaultValue: selectedComponent.type === 'number' || selectedComponent.type === 'range' ? Number(event.target.value) : event.target.value
-                          }))}
+                          value={
+                            typeof selectedComponent.defaultValue === 'number'
+                              ? selectedComponent.defaultValue
+                              : typeof selectedComponent.defaultValue === 'string'
+                              ? selectedComponent.defaultValue
+                              : ''
+                          }
+                          onChange={(event) =>
+                            updateSelectedComponent((item) => ({
+                              ...item,
+                              defaultValue:
+                                selectedComponent.type === 'number' || selectedComponent.type === 'range'
+                                  ? Number(event.target.value)
+                                  : event.target.value
+                            }))
+                          }
                           disabled={!canEdit}
                         />
                       </label>
@@ -734,7 +1089,13 @@ export default function SystemStudioPage() {
 
                     <label>
                       <span>Obligatoire</span>
-                      <select value={String(Boolean(selectedComponent.required))} onChange={(event) => updateSelectedComponent((item) => ({ ...item, required: event.target.value === 'true' }))} disabled={!canEdit}>
+                      <select
+                        value={String(Boolean(selectedComponent.required))}
+                        onChange={(event) =>
+                          updateSelectedComponent((item) => ({ ...item, required: event.target.value === 'true' }))
+                        }
+                        disabled={!canEdit}
+                      >
                         <option value="false">Non</option>
                         <option value="true">Oui</option>
                       </select>
