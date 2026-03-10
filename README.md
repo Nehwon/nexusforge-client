@@ -153,6 +153,22 @@ npm run build
 
 Puis déployer le contenu de `frontend/dist` sur l'hébergement web (ex: o2switch).
 
+### Déploiement O2switch avec backup auto (recommandé)
+
+Un script de déploiement sécurisé est disponible:
+
+```bash
+bash scripts/o2switch/deploy-with-backup.sh
+```
+
+Ce script:
+
+- sauvegarde l'état backend (`data/state.json`) avant déploiement,
+- rapatrie la sauvegarde en local (hors git),
+- déploie frontend + backend,
+- préserve `backend/data` et `backend/.env`,
+- redémarre l'application Node.
+
 ### Backend inclus dans ce repo
 
 Un backend Express est disponible dans `backend/` avec:

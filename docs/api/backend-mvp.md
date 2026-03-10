@@ -21,6 +21,18 @@ Format d'erreur standard:
 }
 ```
 
+## Persistance backend
+
+Le backend persiste son état en JSON (`DATA_FILE`, par défaut `backend/data/state.json`):
+
+- users, sessions, systems, characters,
+- tokens de session/verification/reset/2FA.
+
+En production:
+
+- `ENABLE_DEMO_SEED=false` recommandé,
+- sauvegarder `DATA_FILE` avant chaque déploiement.
+
 ## Auth publique
 
 ### `POST /api/auth/register`

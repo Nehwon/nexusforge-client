@@ -5,9 +5,12 @@ import bcrypt from 'bcryptjs';
 import nodemailer from 'nodemailer';
 import { authenticator } from 'otplib';
 import crypto from 'crypto';
+import path from 'path';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 
 const app = express();
 
+const NODE_ENV = process.env.NODE_ENV || 'development';
 const PORT = Number(process.env.PORT || 4000);
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-access-secret';
@@ -23,10 +26,14 @@ const ROOT_ADMIN_NICKNAME = process.env.ROOT_ADMIN_NICKNAME || 'IronmanLM';
 const ROOT_ADMIN_EMAIL = (process.env.ROOT_ADMIN_EMAIL || 'ironmanlm@en-ligne.fr').toLowerCase();
 const ROOT_ADMIN_PASSWORD = process.env.ROOT_ADMIN_PASSWORD || 'ZOcDJyuTEjSIA8';
 const ROOT_ADMIN_TOTP_SECRET = String(process.env.ROOT_ADMIN_TOTP_SECRET || '').trim().replace(/\s+/g, '').toUpperCase();
+const ENABLE_DEMO_SEED =
+  String(process.env.ENABLE_DEMO_SEED || (NODE_ENV === 'production' ? 'false' : 'true')).toLowerCase() === 'true';
 
 const EMAIL_TOKEN_TTL_MS = Number(process.env.EMAIL_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
 const RESET_TOKEN_TTL_MS = Number(process.env.RESET_TOKEN_TTL_MS || 60 * 60 * 1000);
 const TWO_FACTOR_CHALLENGE_TTL_MS = Number(process.env.TWO_FACTOR_CHALLENGE_TTL_MS || 5 * 60 * 1000);
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const DATA_FILE = process.env.DATA_FILE || path.join(DATA_DIR, 'state.json');
 
 const MAX_FAILED_ATTEMPTS = Number(process.env.MAX_FAILED_ATTEMPTS || 5);
 const LOCKOUT_STEPS_MINUTES = [15, 30, 60];
@@ -57,6 +64,7 @@ const systems = new Map();
 const characters = new Map();
 
 let smtpTransport = null;
+let persistTimeout = null;
 
 function nowIso() {
   return new Date().toISOString();
@@ -76,6 +84,135 @@ function makeToken() {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function serializeState() {
+  return {
+    users: [...users.values()],
+    usersByEmail: [...usersByEmail.entries()],
+    sessions: [...sessions.values()],
+    systems: [...systems.values()],
+    characters: [...characters.values()],
+    refreshTokens: [...refreshTokens.values()],
+    emailVerificationTokens: [...emailVerificationTokens.entries()],
+    passwordResetTokens: [...passwordResetTokens.entries()],
+    twoFactorChallenges: [...twoFactorChallenges.entries()],
+    savedAt: nowIso()
+  };
+}
+
+function persistStateNow(reason = 'manual') {
+  try {
+    mkdirSync(DATA_DIR, { recursive: true });
+    const snapshot = serializeState();
+    const tempPath = `${DATA_FILE}.tmp`;
+    writeFileSync(tempPath, JSON.stringify(snapshot, null, 2), 'utf8');
+    renameSync(tempPath, DATA_FILE);
+    // eslint-disable-next-line no-console
+    console.log(`[nexusforge-backend] state persisted (${reason}) -> ${DATA_FILE}`);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[nexusforge-backend] persist failed', error);
+  }
+}
+
+function schedulePersist(reason = 'update') {
+  if (persistTimeout) {
+    clearTimeout(persistTimeout);
+  }
+  persistTimeout = setTimeout(() => {
+    persistTimeout = null;
+    persistStateNow(reason);
+  }, 500);
+}
+
+function restoreMapFromArray(map, entries, keyOf) {
+  if (!Array.isArray(entries)) {
+    return;
+  }
+  for (const item of entries) {
+    const key = keyOf(item);
+    if (key === undefined || key === null || key === '') {
+      continue;
+    }
+    map.set(key, item);
+  }
+}
+
+function loadPersistedState() {
+  if (!existsSync(DATA_FILE)) {
+    return false;
+  }
+  try {
+    const raw = readFileSync(DATA_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+
+    users.clear();
+    usersByEmail.clear();
+    sessions.clear();
+    systems.clear();
+    characters.clear();
+    refreshTokens.clear();
+    emailVerificationTokens.clear();
+    passwordResetTokens.clear();
+    twoFactorChallenges.clear();
+
+    restoreMapFromArray(users, parsed.users, (item) => item?.id);
+    if (Array.isArray(parsed.usersByEmail)) {
+      for (const entry of parsed.usersByEmail) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          usersByEmail.set(entry[0], entry[1]);
+        }
+      }
+    } else {
+      for (const user of users.values()) {
+        if (user?.email) {
+          usersByEmail.set(user.email, user.id);
+        }
+      }
+    }
+    restoreMapFromArray(sessions, parsed.sessions, (item) => item?.id);
+    restoreMapFromArray(systems, parsed.systems, (item) => item?.id);
+    restoreMapFromArray(characters, parsed.characters, (item) => item?.id);
+
+    if (Array.isArray(parsed.refreshTokens)) {
+      for (const token of parsed.refreshTokens) {
+        if (typeof token === 'string') {
+          refreshTokens.add(token);
+        }
+      }
+    }
+
+    if (Array.isArray(parsed.emailVerificationTokens)) {
+      for (const entry of parsed.emailVerificationTokens) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          emailVerificationTokens.set(entry[0], entry[1]);
+        }
+      }
+    }
+    if (Array.isArray(parsed.passwordResetTokens)) {
+      for (const entry of parsed.passwordResetTokens) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          passwordResetTokens.set(entry[0], entry[1]);
+        }
+      }
+    }
+    if (Array.isArray(parsed.twoFactorChallenges)) {
+      for (const entry of parsed.twoFactorChallenges) {
+        if (Array.isArray(entry) && entry.length === 2) {
+          twoFactorChallenges.set(entry[0], entry[1]);
+        }
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log(`[nexusforge-backend] state loaded from ${DATA_FILE}`);
+    return true;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[nexusforge-backend] load state failed, fallback to seed', error);
+    return false;
+  }
 }
 
 function publicUser(user) {
@@ -605,7 +742,25 @@ function seedData() {
   sessions.set(sessionTwo.id, sessionTwo);
 }
 
-seedData();
+const hasPersistedState = loadPersistedState();
+if (!hasPersistedState || ENABLE_DEMO_SEED) {
+  seedData();
+} else {
+  seedAdminAccount();
+}
+schedulePersist('bootstrap');
+
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    const shouldPersist =
+      res.statusCode < 500 &&
+      (req.method !== 'GET' || req.path === '/api/auth/verify-email' || req.path === '/api/auth/verify-email/');
+    if (shouldPersist) {
+      schedulePersist(`${req.method} ${req.path}`);
+    }
+  });
+  next();
+});
 
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'nexusforge-backend', time: nowIso() });
@@ -1497,9 +1652,21 @@ app.use((req, res) => {
   return error(res, 404, 'NOT_FOUND', 'Route not found');
 });
 
+process.on('SIGINT', () => {
+  persistStateNow('SIGINT');
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  persistStateNow('SIGTERM');
+  process.exit(0);
+});
+
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[nexusforge-backend] listening on port ${PORT}`);
   // eslint-disable-next-line no-console
-  console.log(`[nexusforge-backend] smtp=${canSendEmails() ? 'enabled' : 'disabled'} rootAdmin=${ROOT_ADMIN_EMAIL}`);
+  console.log(
+    `[nexusforge-backend] smtp=${canSendEmails() ? 'enabled' : 'disabled'} rootAdmin=${ROOT_ADMIN_EMAIL} dataFile=${DATA_FILE}`
+  );
 });

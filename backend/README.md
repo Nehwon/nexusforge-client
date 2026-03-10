@@ -21,6 +21,8 @@ npm start
 - `CORS_ORIGIN` (ex: `https://nexusforge.en-ligne.fr`)
 - `APP_BASE_URL` (URL frontend, utilisée dans les emails)
 - `API_BASE_URL` (URL API publique)
+- `ENABLE_DEMO_SEED` (`false` recommandé en prod)
+- `DATA_DIR` / `DATA_FILE` (persistance JSON backend)
 - `JWT_SECRET`, `JWT_REFRESH_SECRET`
 - `ROOT_ADMIN_*` (compte admin protégé)
 - `ROOT_ADMIN_TOTP_SECRET` (optionnel, force le 2FA TOTP du root admin)
@@ -38,6 +40,20 @@ npm start
 - 2FA TOTP optionnel (fortement recommandé)
 - Compte `ROOT_ADMIN` protégé (non rétrogradable/supprimable)
 - Si `ROOT_ADMIN_TOTP_SECRET` est défini (BASE32), le 2FA du root admin est forcé et ne peut pas être désactivé via API.
+- Persistance locale JSON (`DATA_FILE`) + sauvegarde automatique après modifications.
+
+## Sauvegarde déploiement O2switch (recommandé)
+
+Scripts fournis dans le repo:
+
+- `scripts/o2switch/backup-fetch-state.sh`:
+  - crée une archive distante de `backend/data/state.json`,
+  - rapatrie l'archive en local (hors git), dossier par défaut: `~/nexusforge-prod-backups`.
+- `scripts/o2switch/deploy-with-backup.sh`:
+  - fait le backup ci-dessus,
+  - build et déploie frontend,
+  - déploie backend en préservant `data/` et `.env`,
+  - redémarre l'app Node.
 
 ## Endpoints principaux
 
