@@ -82,6 +82,101 @@ function canEditCharacter(character: Character, currentUser: User, role: 'gm' | 
   return role === 'gm' || character.ownerUserId === currentUser.id;
 }
 
+type StudioRuntimeValues = Record<string, string | number | boolean | string[]>;
+
+function defaultStudioValue(component: NonNullable<GameSystem['studioSchema']>['views'][number]['components'][number]) {
+  if (component.type === 'checkbox') {
+    return Boolean(component.defaultValue);
+  }
+  if (component.type === 'number' || component.type === 'range') {
+    return typeof component.defaultValue === 'number' ? component.defaultValue : 0;
+  }
+  if (component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested') {
+    return typeof component.defaultValue === 'string' ? component.defaultValue : component.options?.[0] ?? '';
+  }
+  if (component.type === 'relation') {
+    return component.allowMultiple ? [] : '';
+  }
+  return typeof component.defaultValue === 'string' ? component.defaultValue : '';
+}
+
+function toNumeric(value: StudioRuntimeValues[string] | undefined): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (typeof value === 'boolean') {
+    return value ? 1 : 0;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function evalFormula(formula: string, values: StudioRuntimeValues): number | null {
+  const withValues = formula.replace(/@([A-Za-z0-9_]+)/g, (_, key: string) => String(toNumeric(values[key])));
+  if (!/^[0-9+\-*/().\s]+$/.test(withValues)) {
+    return null;
+  }
+  try {
+    const result = new Function(`return (${withValues});`)();
+    return typeof result === 'number' && Number.isFinite(result) ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyStudioFormulas(
+  components: NonNullable<GameSystem['studioSchema']>['views'][number]['components'],
+  values: StudioRuntimeValues
+): StudioRuntimeValues {
+  let next = { ...values };
+  for (let i = 0; i < 4; i += 1) {
+    let changed = false;
+    for (const component of components) {
+      if (!component.formula?.trim()) {
+        continue;
+      }
+      const computed = evalFormula(component.formula.trim(), next);
+      if (computed === null) {
+        continue;
+      }
+      if (next[component.key] !== computed) {
+        next[component.key] = computed;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      break;
+    }
+  }
+  return next;
+}
+
+function rollStudioDice(formula: string, values: StudioRuntimeValues): { total: number; detail: string } | null {
+  const raw = formula.trim().replace(/@([A-Za-z0-9_]+)/g, (_, key: string) => String(toNumeric(values[key])));
+  const compact = raw.replace(/\s+/g, '');
+  const match = compact.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+  if (!match) {
+    const fallback = evalFormula(compact, values);
+    if (fallback === null) {
+      return null;
+    }
+    return { total: fallback, detail: compact };
+  }
+
+  const diceCount = Math.max(1, Number(match[1] || '1'));
+  const diceSides = Math.max(2, Number(match[2]));
+  const modifier = Number(match[3] || '0');
+  const rolls = Array.from({ length: diceCount }, () => Math.floor(Math.random() * diceSides) + 1);
+  const total = rolls.reduce((sum, roll) => sum + roll, 0) + modifier;
+  return {
+    total,
+    detail: `${rolls.join(' + ')}${modifier ? ` ${modifier > 0 ? '+' : '-'} ${Math.abs(modifier)}` : ''}`
+  };
+}
+
 export default function CharacterWidget({ currentUser, currentSession, role }: CharacterWidgetProps) {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [currentSystem, setCurrentSystem] = useState<GameSystem | null>(null);
@@ -91,6 +186,9 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastRollResult, setLastRollResult] = useState<string | null>(null);
+  const [selectedStudioViewId, setSelectedStudioViewId] = useState<string>('');
+  const [studioRuntimeValues, setStudioRuntimeValues] = useState<StudioRuntimeValues>({});
+  const [lastStudioRollResult, setLastStudioRollResult] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -166,6 +264,31 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
 
   const primaryFields = selectedSheet?.fields.filter((field) => field.isPrimary) ?? [];
   const availableTemplates = currentSystem?.referenceSheets ?? [];
+  const availableStudioViews = currentSystem?.studioSchema?.views ?? [];
+  const selectedStudioView =
+    availableStudioViews.find((view) => view.id === selectedStudioViewId) ?? availableStudioViews[0] ?? null;
+
+  useEffect(() => {
+    if (!currentSystem?.studioSchema?.views?.length) {
+      setSelectedStudioViewId('');
+      setStudioRuntimeValues({});
+      return;
+    }
+    setSelectedStudioViewId((current) => current || currentSystem.studioSchema?.views?.[0]?.id || '');
+  }, [currentSystem?.id, currentSystem?.studioSchema?.views]);
+
+  useEffect(() => {
+    if (!selectedStudioView) {
+      setStudioRuntimeValues({});
+      return;
+    }
+    const base = selectedStudioView.components.reduce<StudioRuntimeValues>((acc, component) => {
+      acc[component.key] = defaultStudioValue(component);
+      return acc;
+    }, {});
+    setStudioRuntimeValues(applyStudioFormulas(selectedStudioView.components, base));
+    setLastStudioRollResult(null);
+  }, [selectedStudioView?.id, selectedStudioView?.components]);
 
   const handleResourceDelta = async (fieldId: string, delta: number) => {
     if (!selectedCharacter || !selectedSheet) {
@@ -245,6 +368,20 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Impossible de creer la fiche depuis le template.');
     }
+  };
+
+  const setStudioRuntimeValue = (
+    component: NonNullable<GameSystem['studioSchema']>['views'][number]['components'][number],
+    value: string | number | boolean | string[]
+  ) => {
+    if (!selectedStudioView) {
+      return;
+    }
+    const next = applyStudioFormulas(selectedStudioView.components, {
+      ...studioRuntimeValues,
+      [component.key]: value
+    });
+    setStudioRuntimeValues(next);
   };
 
   return (
@@ -375,6 +512,105 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
                     {action.label}
                   </button>
                 ))}
+              </div>
+            </section>
+          ) : null}
+
+          {selectedStudioView ? (
+            <section className="character-widget__actions">
+              <h4 style={{ margin: 0 }}>Fiche Studio (runtime beta)</h4>
+              {availableStudioViews.length > 1 ? (
+                <label style={{ display: 'grid', gap: '0.35rem', marginTop: '0.5rem' }}>
+                  <span>Vue studio</span>
+                  <select
+                    value={selectedStudioView.id}
+                    onChange={(event) => setSelectedStudioViewId(event.target.value)}
+                    style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '0.45rem' }}
+                  >
+                    {availableStudioViews.map((view) => (
+                      <option key={view.id} value={view.id}>
+                        {view.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {lastStudioRollResult ? <p style={{ marginBottom: 0 }}>{lastStudioRollResult}</p> : null}
+
+              <div className="studio-runtime-grid" style={{ marginTop: '0.65rem' }}>
+                {selectedStudioView.components.map((component) => {
+                  const value = studioRuntimeValues[component.key];
+                  return (
+                    <article key={`studio-runtime-${component.id}`} className="studio-runtime-item">
+                      <strong>{component.label || component.key}</strong>
+                      <small>{component.key}</small>
+
+                      {component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar' ? (
+                        <input
+                          type={component.type === 'color' ? 'color' : component.type === 'date' ? 'date' : component.type === 'time' ? 'time' : 'text'}
+                          value={typeof value === 'string' ? value : ''}
+                          onChange={(event) => setStudioRuntimeValue(component, event.target.value)}
+                        />
+                      ) : null}
+                      {component.type === 'textarea' ? (
+                        <textarea rows={2} value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)} />
+                      ) : null}
+                      {component.type === 'number' || component.type === 'range' ? (
+                        <input
+                          type={component.type === 'number' ? 'number' : 'range'}
+                          min={component.min ?? 0}
+                          max={component.max ?? 100}
+                          step={component.step ?? 1}
+                          value={typeof value === 'number' ? value : 0}
+                          onChange={(event) => setStudioRuntimeValue(component, Number(event.target.value))}
+                        />
+                      ) : null}
+                      {component.type === 'checkbox' ? (
+                        <label>
+                          <input type="checkbox" checked={Boolean(value)} onChange={(event) => setStudioRuntimeValue(component, event.target.checked)} /> active
+                        </label>
+                      ) : null}
+                      {component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested' ? (
+                        <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
+                          {(component.options ?? []).map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
+                      {component.type === 'dice_roll' ? (
+                        <button
+                          className="button secondary"
+                          onClick={() => {
+                            const result = rollStudioDice(component.diceFormula || component.formula || '1d20', studioRuntimeValues);
+                            if (!result) {
+                              setLastStudioRollResult(`Jet invalide: ${component.diceFormula || component.formula || ''}`);
+                              return;
+                            }
+                            setLastStudioRollResult(`${component.label}: ${result.total} (${result.detail})`);
+                          }}
+                        >
+                          Lancer ({component.diceFormula || component.formula || '1d20'})
+                        </button>
+                      ) : null}
+                      {component.type === 'table' || component.type === 'inventory' ? (
+                        <small>Colonnes: {(component.columns ?? []).join(', ') || '-'}</small>
+                      ) : null}
+                      {component.type === 'relation' ? (
+                        <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
+                          <option value="">Cible</option>
+                          {selectedStudioView.components.map((candidate) => (
+                            <option key={candidate.key} value={candidate.key}>
+                              {candidate.key}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
+                      {component.formula ? <small>formule: {component.formula}</small> : null}
+                    </article>
+                  );
+                })}
               </div>
             </section>
           ) : null}
