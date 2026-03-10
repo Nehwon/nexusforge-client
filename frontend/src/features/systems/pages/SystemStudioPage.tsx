@@ -318,6 +318,24 @@ function extractElementLabel(el: HTMLElement, labelsByFor: Map<string, string>):
   if (id && labelsByFor.has(id)) {
     return labelsByFor.get(id) || '';
   }
+  const previousLabel = el.previousElementSibling;
+  if (previousLabel && previousLabel.tagName.toLowerCase() === 'label') {
+    const text = previousLabel.textContent?.trim() || '';
+    if (text) {
+      return text;
+    }
+  }
+  const parentLabel = el.closest('label');
+  if (parentLabel?.textContent?.trim()) {
+    return parentLabel.textContent.trim();
+  }
+  const parent = el.parentElement;
+  if (parent) {
+    const siblingLabel = parent.querySelector(':scope > label:not([for])');
+    if (siblingLabel?.textContent?.trim()) {
+      return siblingLabel.textContent.trim();
+    }
+  }
   const aria = el.getAttribute('aria-label');
   if (aria?.trim()) {
     return aria.trim();
@@ -412,6 +430,7 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
 
   const isIgnoredNode = (el: HTMLElement): boolean =>
     ['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'HEAD', 'TITLE'].includes(el.tagName);
+  const isFormFieldTag = (tag: string): boolean => ['input', 'textarea', 'select', 'button'].includes(tag);
 
   const isRowLike = (el: HTMLElement): boolean => {
     const c = `${el.className || ''}`.toLowerCase();
@@ -497,7 +516,7 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
     }
 
     const tag = el.tagName.toLowerCase();
-    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'strong', 'em'].includes(tag)) {
+    if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'strong', 'em', 'label'].includes(tag)) {
       const text = el.textContent?.trim();
       if (text) {
         createComponent('label', text, parentId, text);
@@ -548,6 +567,18 @@ function convertHtmlToStudioComponents(html: string): HtmlImportResult {
 
     const children = Array.from(el.children).filter((child) => !isIgnoredNode(child as HTMLElement));
     if (children.length === 0) {
+      return;
+    }
+
+    const directLabelChildren = children.filter((child) => child.tagName.toLowerCase() === 'label');
+    const directFieldChildren = children.filter((child) => isFormFieldTag(child.tagName.toLowerCase()));
+    if (directLabelChildren.length === 1 && directFieldChildren.length === 1 && children.length <= 3) {
+      const rowLabel = inferLabel(el, 'Ligne');
+      const row = createComponent('row', rowLabel, parentId, rowLabel);
+      const labelColumn = createComponent('column', 'Label', row.id, `${rowLabel}_label`);
+      const valueColumn = createComponent('column', 'Valeur', row.id, `${rowLabel}_value`);
+      processNode(directLabelChildren[0], labelColumn.id);
+      processNode(directFieldChildren[0], valueColumn.id);
       return;
     }
 

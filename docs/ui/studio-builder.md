@@ -79,6 +79,7 @@ Mapping principal:
 - layouts type `row/grid/flex` -> `row` + `column`.
 - `nav` / `tablist` / menus a boutons -> `tabs` (options detectees automatiquement).
 - balises texte (`h1...h6`, `p`, `span`, `strong`) -> `label`.
+- paires `label + input` dans un meme bloc -> ligne structuree (`row` avec colonne libelle + colonne valeur).
 
 Le convertisseur:
 
