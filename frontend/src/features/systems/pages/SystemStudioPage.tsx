@@ -14,6 +14,7 @@ import {
 
 type RuntimeValue = string | number | boolean | string[] | Array<Record<string, string>>;
 type RuntimeValues = Record<string, RuntimeValue>;
+type StudioCenterTab = 'canvas' | 'fields';
 
 type PaletteItem = {
   type: StudioComponentType;
@@ -837,6 +838,8 @@ export default function SystemStudioPage() {
   const [scriptTestResult, setScriptTestResult] = useState<string>('');
   const [blockJsonDraft, setBlockJsonDraft] = useState('');
   const [htmlImportDraft, setHtmlImportDraft] = useState('');
+  const [isHtmlImportModalOpen, setIsHtmlImportModalOpen] = useState(false);
+  const [activeCenterTab, setActiveCenterTab] = useState<StudioCenterTab>('canvas');
   const lastSavedSchemaRef = useRef<string>('');
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
@@ -874,6 +877,27 @@ export default function SystemStudioPage() {
     () => [...BUTTON_SCRIPT_TEMPLATES, ...customButtonTemplates],
     [customButtonTemplates]
   );
+
+  const fieldSummaryRows = useMemo(() => {
+    if (!schema) {
+      return [];
+    }
+    return schema.views.flatMap((view) => {
+      const indexById = new Map(view.components.map((component) => [component.id, component]));
+      return view.components.map((component) => ({
+        id: component.id,
+        viewId: view.id,
+        viewName: view.name,
+        key: component.key,
+        label: component.label || '-',
+        type: component.type,
+        parentKey: component.parentId ? indexById.get(component.parentId)?.key ?? '(inconnu)' : 'racine',
+        reference: component.reference?.trim() || '-',
+        formula: component.formula?.trim() || '-',
+        showIf: component.showIf?.trim() || '-'
+      }));
+    });
+  }, [schema]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1442,6 +1466,20 @@ export default function SystemStudioPage() {
     }
   };
 
+  const handleHtmlFileImport = (file: File | undefined) => {
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setHtmlImportDraft(String(reader.result || ''));
+      setStatusMessage(`Fichier HTML charge: ${file.name}`);
+      setErrorMessage(null);
+    };
+    reader.onerror = () => setErrorMessage('Lecture du fichier HTML impossible.');
+    reader.readAsText(file);
+  };
+
   const importHtmlIntoSelectedView = () => {
     if (!canEdit || !selectedView) {
       return;
@@ -1481,6 +1519,7 @@ export default function SystemStudioPage() {
       `Import HTML reussi: ${normalized.length} bloc(s) ajoute(s)${converted.warnings.length ? ` (${converted.warnings.length} avertissement(s))` : ''}.`
     );
     setErrorMessage(null);
+    setIsHtmlImportModalOpen(false);
   };
 
   const saveStudio = async (options?: { auto?: boolean }) => {
@@ -1736,6 +1775,12 @@ export default function SystemStudioPage() {
                 </Button>
               </div>
             </div>
+            <nav className="studio-quick-nav" aria-label="Navigation studio">
+              <a href="#studio-left-panel">Palette</a>
+              <a href="#studio-center-panel">Zone centrale</a>
+              <a href="#studio-right-panel">Proprietes</a>
+              <a href="#studio-runtime">Runtime</a>
+            </nav>
             {!canEdit ? <p style={{ marginBottom: 0, color: '#b42318' }}>Lecture seule: proprietaire/admin uniquement.</p> : null}
             {statusMessage ? <p style={{ marginBottom: 0, color: '#067647' }}>{statusMessage}</p> : null}
             {errorMessage ? <p style={{ marginBottom: 0, color: '#b42318' }}>{errorMessage}</p> : null}
@@ -1793,9 +1838,17 @@ export default function SystemStudioPage() {
 
           <section className={isFullscreen ? 'studio-fullscreen' : ''}>
             <section ref={studioLayoutRef} className="studio-layout" style={layoutStyle}>
-              <aside className="studio-panel">
+              <aside className="studio-panel" id="studio-left-panel">
                 <h2 style={{ marginTop: 0 }}>Arborescence composants</h2>
                 <p style={{ marginTop: 0, fontSize: '0.9rem' }}>Glisse-depose vers la vue centrale.</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setIsHtmlImportModalOpen(true)}
+                  disabled={!canEdit || !selectedView}
+                >
+                  Convertir HTML (popup)
+                </Button>
                 <div className="studio-tree">
                   {PALETTE_TREE.map((branch) => (
                     <details key={branch.id} open>
@@ -1822,6 +1875,7 @@ export default function SystemStudioPage() {
               <div className="studio-splitter" onMouseDown={(event) => startResizing('left', event)} title="Redimensionner" />
 
               <section
+                id="studio-center-panel"
                 className="studio-panel"
                 onDragOver={(event) => {
                   if (canEdit) {
@@ -1856,79 +1910,105 @@ export default function SystemStudioPage() {
                     </Button>
                   </div>
                 </div>
-
-                <div className="studio-canvas">
-                  {selectedView ? (
-                    <>
-                      <label style={{ display: 'grid', gap: '0.35rem', marginBottom: '0.75rem' }}>
-                        <span>Nom de la vue</span>
-                        <input
-                          type="text"
-                          value={selectedView.name}
-                          onChange={(event) => updateSelectedView((view) => ({ ...view, name: event.target.value }))}
-                          disabled={!canEdit}
-                        />
-                      </label>
-                      <p style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '0.9rem', opacity: 0.9 }}>
-                        Astuce: depose un <strong>Tableau</strong> pour creer automatiquement <strong>Ligne</strong> puis <strong>Colonne</strong>.
-                        Les blocs logiques (IF/THEN/ELSE/OR/NOT) sont aussi imbriquables.
-                      </p>
-                      <details style={{ marginBottom: '0.75rem' }}>
-                        <summary>Convertisseur HTML vers Vue Studio</summary>
-                        <div style={{ display: 'grid', gap: '0.55rem', marginTop: '0.55rem' }}>
-                          <label style={{ display: 'grid', gap: '0.25rem' }}>
-                            <span>Importer un fichier HTML</span>
-                            <input
-                              type="file"
-                              accept=".html,text/html"
-                              onChange={(event) => {
-                                const file = event.target.files?.[0];
-                                if (!file) {
-                                  return;
-                                }
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                  setHtmlImportDraft(String(reader.result || ''));
-                                  setStatusMessage(`Fichier HTML charge: ${file.name}`);
-                                };
-                                reader.onerror = () => setErrorMessage('Lecture du fichier HTML impossible.');
-                                reader.readAsText(file);
-                              }}
-                              disabled={!canEdit}
-                            />
-                          </label>
-                          <label style={{ display: 'grid', gap: '0.25rem' }}>
-                            <span>Ou coller le HTML</span>
-                            <textarea
-                              rows={8}
-                              value={htmlImportDraft}
-                              onChange={(event) => setHtmlImportDraft(event.target.value)}
-                              placeholder="<form>...</form>"
-                              disabled={!canEdit}
-                            />
-                          </label>
-                          <div>
-                            <Button type="button" variant="secondary" onClick={importHtmlIntoSelectedView} disabled={!canEdit || !htmlImportDraft.trim()}>
-                              Convertir et ajouter a la vue
-                            </Button>
-                          </div>
-                        </div>
-                      </details>
-
-                      {selectedView.components.length === 0 ? (
-                        <p style={{ margin: 0 }}>Depose un composant ici pour commencer.</p>
-                      ) : (
-                        <div className="studio-components-grid">
-                          {rootComponents.map((component) => renderCanvasComponent(component, 0, new Set<string>()))}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p style={{ margin: 0 }}>Aucune vue disponible.</p>
-                  )}
+                <div className="studio-center-tabs" role="tablist" aria-label="Modes studio">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeCenterTab === 'canvas'}
+                    className={`button secondary ${activeCenterTab === 'canvas' ? 'is-active' : ''}`.trim()}
+                    onClick={() => setActiveCenterTab('canvas')}
+                  >
+                    Canvas visuel
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeCenterTab === 'fields'}
+                    className={`button secondary ${activeCenterTab === 'fields' ? 'is-active' : ''}`.trim()}
+                    onClick={() => setActiveCenterTab('fields')}
+                  >
+                    Tableau des champs
+                  </button>
                 </div>
 
-                <section className="studio-runtime">
+                {activeCenterTab === 'canvas' ? (
+                  <div className="studio-canvas">
+                    {selectedView ? (
+                      <>
+                        <label style={{ display: 'grid', gap: '0.35rem', marginBottom: '0.75rem' }}>
+                          <span>Nom de la vue</span>
+                          <input
+                            type="text"
+                            value={selectedView.name}
+                            onChange={(event) => updateSelectedView((view) => ({ ...view, name: event.target.value }))}
+                            disabled={!canEdit}
+                          />
+                        </label>
+                        <p style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '0.9rem', opacity: 0.9 }}>
+                          Astuce: depose un <strong>Tableau</strong> pour creer automatiquement <strong>Ligne</strong> puis <strong>Colonne</strong>.
+                          Les blocs logiques (IF/THEN/ELSE/OR/NOT) sont aussi imbriquables.
+                        </p>
+                        {selectedView.components.length === 0 ? (
+                          <p style={{ margin: 0 }}>Depose un composant ici pour commencer.</p>
+                        ) : (
+                          <div className="studio-components-grid">
+                            {rootComponents.map((component) => renderCanvasComponent(component, 0, new Set<string>()))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p style={{ margin: 0 }}>Aucune vue disponible.</p>
+                    )}
+                  </div>
+                ) : (
+                  <section className="studio-fields-table" role="tabpanel">
+                    <header>
+                      <h3 style={{ marginTop: 0, marginBottom: '0.3rem' }}>Recapitulatif des champs par vue</h3>
+                      <p style={{ margin: 0, fontSize: '0.9rem', opacity: 0.9 }}>
+                        Utilise ce tableau pour construire des formules avec <code>@cleTechnique</code> et des liaisons entre blocs.
+                      </p>
+                    </header>
+                    {fieldSummaryRows.length === 0 ? (
+                      <p style={{ margin: 0 }}>Aucun composant a afficher.</p>
+                    ) : (
+                      <div className="studio-fields-table__scroll">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Vue</th>
+                              <th>Cle</th>
+                              <th>Label</th>
+                              <th>Type</th>
+                              <th>Parent</th>
+                              <th>Reference</th>
+                              <th>Formule</th>
+                              <th>ShowIf</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fieldSummaryRows.map((row) => (
+                              <tr key={row.id}>
+                                <td>{row.viewName}</td>
+                                <td>
+                                  <code>@{row.key}</code>
+                                </td>
+                                <td>{row.label}</td>
+                                <td>{row.type}</td>
+                                <td>{row.parentKey === 'racine' ? 'racine' : `@${row.parentKey}`}</td>
+                                <td>{row.reference}</td>
+                                <td>{row.formula}</td>
+                                <td>{row.showIf}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {activeCenterTab === 'canvas' ? (
+                  <section className="studio-runtime" id="studio-runtime">
                   <h3 style={{ marginTop: 0 }}>Apercu runtime (calculs / references / des)</h3>
                   {runtimeMessage ? <p style={{ marginTop: 0 }}>{runtimeMessage}</p> : null}
                   {!selectedView || selectedView.components.length === 0 ? (
@@ -2043,12 +2123,13 @@ export default function SystemStudioPage() {
                       })}
                     </div>
                   )}
-                </section>
+                  </section>
+                ) : null}
               </section>
 
               <div className="studio-splitter" onMouseDown={(event) => startResizing('right', event)} title="Redimensionner" />
 
-              <aside className="studio-panel">
+              <aside className="studio-panel" id="studio-right-panel">
                 <h2 style={{ marginTop: 0 }}>Proprietes</h2>
                 {selectedComponent ? (
                   <div className="studio-properties">
@@ -2478,6 +2559,71 @@ export default function SystemStudioPage() {
           </section>
         </>
       )}
+      {isHtmlImportModalOpen ? (
+        <div
+          role="presentation"
+          onClick={() => setIsHtmlImportModalOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1200,
+            background: 'rgba(3, 12, 26, 0.75)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: '1rem'
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label="Convertisseur HTML vers Vue Studio"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: 'min(900px, 100%)',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              borderRadius: '12px',
+              border: '1px solid rgba(61, 146, 255, 0.45)',
+              background: '#071832',
+              padding: '1rem'
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>Convertisseur HTML vers Vue Studio</h2>
+            <p style={{ marginTop: 0, fontSize: '0.9rem', opacity: 0.9 }}>
+              Charge un fichier HTML ou colle son contenu, puis ajoute les blocs convertis dans la vue active.
+            </p>
+            <div style={{ display: 'grid', gap: '0.7rem' }}>
+              <label style={{ display: 'grid', gap: '0.3rem' }}>
+                <span>Importer un fichier HTML</span>
+                <input
+                  type="file"
+                  accept=".html,text/html"
+                  onChange={(event) => handleHtmlFileImport(event.target.files?.[0])}
+                  disabled={!canEdit}
+                />
+              </label>
+              <label style={{ display: 'grid', gap: '0.3rem' }}>
+                <span>Ou coller le HTML</span>
+                <textarea
+                  rows={14}
+                  value={htmlImportDraft}
+                  onChange={(event) => setHtmlImportDraft(event.target.value)}
+                  placeholder="<form>...</form>"
+                  disabled={!canEdit}
+                />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', marginTop: '0.9rem' }}>
+              <Button type="button" variant="secondary" onClick={importHtmlIntoSelectedView} disabled={!canEdit || !htmlImportDraft.trim()}>
+                Convertir et ajouter a la vue
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setIsHtmlImportModalOpen(false)}>
+                Fermer
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </Layout>
   );
 }

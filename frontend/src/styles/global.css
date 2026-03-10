@@ -1018,6 +1018,27 @@ body.theme-dark .system-builder__toolbar {
   align-items: start;
 }
 
+.studio-quick-nav {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.studio-quick-nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid #d0d5dd;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 0.25rem 0.55rem;
+}
+
 .studio-panel {
   border: 1px solid #d0d5dd;
   border-radius: 12px;
@@ -1025,6 +1046,17 @@ body.theme-dark .system-builder__toolbar {
   padding: 0.85rem;
   display: grid;
   gap: 0.75rem;
+}
+
+.studio-center-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.studio-center-tabs .button.is-active {
+  border-color: #155eef;
+  box-shadow: 0 0 0 2px rgba(21, 94, 239, 0.14);
 }
 
 .studio-tree {
@@ -1222,6 +1254,39 @@ body.theme-dark .system-builder__toolbar {
   gap: 0.35rem;
 }
 
+.studio-fields-table {
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  padding: 0.7rem;
+  background: #ffffff;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.studio-fields-table__scroll {
+  overflow: auto;
+}
+
+.studio-fields-table table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 780px;
+}
+
+.studio-fields-table th,
+.studio-fields-table td {
+  border: 1px solid #eaecf0;
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.84rem;
+}
+
+.studio-fields-table th {
+  background: #f8fafc;
+  font-weight: 700;
+}
+
 .studio-splitter {
   width: 8px;
   border-radius: 999px;
@@ -1246,6 +1311,12 @@ body.theme-dark .system-builder__toolbar {
 body.theme-dark .studio-panel {
   border-color: #334155;
   background: #111827;
+}
+
+body.theme-dark .studio-quick-nav a {
+  border-color: #334155;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 body.theme-dark .studio-tree details {
@@ -1303,6 +1374,20 @@ body.theme-dark .studio-runtime {
 
 body.theme-dark .studio-runtime-item {
   border-color: #334155;
+  background: #0f172a;
+}
+
+body.theme-dark .studio-fields-table {
+  border-color: #334155;
+  background: #111827;
+}
+
+body.theme-dark .studio-fields-table th,
+body.theme-dark .studio-fields-table td {
+  border-color: #334155;
+}
+
+body.theme-dark .studio-fields-table th {
   background: #0f172a;
 }
 

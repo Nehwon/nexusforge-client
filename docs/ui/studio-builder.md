@@ -9,6 +9,17 @@ Le Studio Builder est l'editeur visuel de Nexus Forge pour:
 
 Le principe est unique partout: blocs visuels imbriques + drag&drop.
 
+## Navigation studio
+
+Dans le studio systeme, un menu rapide est disponible en haut:
+
+- `Palette`
+- `Zone centrale`
+- `Proprietes`
+- `Runtime`
+
+Ce menu permet de naviguer rapidement entre les panneaux sur grands ecrans.
+
 ## Regles d'imbrication
 
 - `table` / `inventory` contient des `row`.
@@ -53,6 +64,8 @@ Le Studio intègre un convertisseur qui permet:
 - ou de coller un HTML brut,
 - puis de convertir en composants Studio ajoutés dans la vue courante.
 
+Le convertisseur est accessible via le bouton `Convertir HTML (popup)` en haut de la colonne gauche.
+
 Mapping principal:
 
 - `input` -> `text|number|checkbox|range|date|time|color` selon `type`,
@@ -68,6 +81,26 @@ Le convertisseur:
 - recrée les IDs et les `key` pour éviter les collisions,
 - tente de retrouver les labels via `label[for]`, `aria-label`, `placeholder`, `name`, `id`,
 - ajoute les blocs à la fin de la vue active.
+
+## Onglet "Tableau des champs"
+
+La zone centrale du studio propose deux onglets:
+
+- `Canvas visuel`
+- `Tableau des champs`
+
+L'onglet `Tableau des champs` affiche, pour chaque composant de chaque vue:
+
+- le nom de vue,
+- la cle technique (`@cle`),
+- le label,
+- le type,
+- le parent,
+- la reference (`reference`),
+- la formule (`formula`),
+- la condition d affichage (`showIf`).
+
+Objectif: faciliter la creation de formules et de liaisons entre blocs.
 
 ## Studio d'ecran de partie
 
