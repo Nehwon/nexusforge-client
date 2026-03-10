@@ -102,6 +102,16 @@ L'onglet `Tableau des champs` affiche, pour chaque composant de chaque vue:
 
 Objectif: faciliter la creation de formules et de liaisons entre blocs.
 
+## Rendu runtime arborescent
+
+Le runtime du Studio (et la fiche Studio dans une partie) respecte maintenant l arborescence:
+
+- `row` affiche ses enfants cote a cote,
+- `column` empile ses enfants verticalement,
+- les conteneurs gardent leur imbrication.
+
+Le rendu ne se fait plus en liste plate de boites.
+
 ## Studio d'ecran de partie
 
 Route dediee:

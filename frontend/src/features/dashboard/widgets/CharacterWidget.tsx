@@ -83,6 +83,7 @@ function canEditCharacter(character: Character, currentUser: User, role: 'gm' | 
 }
 
 type StudioRuntimeValues = Record<string, string | number | boolean | string[]>;
+type StudioComponent = NonNullable<GameSystem['studioSchema']>['views'][number]['components'][number];
 
 const STUDIO_STRUCTURAL_TYPES = new Set([
   'container',
@@ -486,6 +487,28 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
   const availableStudioViews = currentSystem?.studioSchema?.views ?? [];
   const selectedStudioView =
     availableStudioViews.find((view) => view.id === selectedStudioViewId) ?? availableStudioViews[0] ?? null;
+  const studioChildrenByParent = useMemo(() => {
+    if (!selectedStudioView) {
+      return {} as Record<string, StudioComponent[]>;
+    }
+    return selectedStudioView.components.reduce<Record<string, StudioComponent[]>>((acc, component) => {
+      if (!component.parentId) {
+        return acc;
+      }
+      if (!acc[component.parentId]) {
+        acc[component.parentId] = [];
+      }
+      acc[component.parentId].push(component);
+      return acc;
+    }, {});
+  }, [selectedStudioView]);
+  const studioRootComponents = useMemo(() => {
+    if (!selectedStudioView) {
+      return [] as StudioComponent[];
+    }
+    const existingIds = new Set(selectedStudioView.components.map((component) => component.id));
+    return selectedStudioView.components.filter((component) => !component.parentId || !existingIds.has(component.parentId));
+  }, [selectedStudioView]);
 
   useEffect(() => {
     if (!currentSystem?.studioSchema?.views?.length) {
@@ -693,6 +716,132 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
     });
   };
 
+  const renderStudioRuntimeField = (component: StudioComponent): JSX.Element => {
+    const value = studioRuntimeValues[component.key];
+    return (
+      <article key={`studio-runtime-${component.id}`} className="studio-runtime-item">
+        <strong>{component.label || component.key}</strong>
+        <small>{component.key}</small>
+
+        {component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar' ? (
+          <input
+            type={component.type === 'color' ? 'color' : component.type === 'date' ? 'date' : component.type === 'time' ? 'time' : 'text'}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(event) => setStudioRuntimeValue(component, event.target.value)}
+          />
+        ) : null}
+        {component.type === 'textarea' ? (
+          <textarea rows={2} value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)} />
+        ) : null}
+        {component.type === 'number' || component.type === 'range' ? (
+          <input
+            type={component.type === 'number' ? 'number' : 'range'}
+            min={component.min ?? 0}
+            max={component.max ?? 100}
+            step={component.step ?? 1}
+            value={typeof value === 'number' ? value : 0}
+            onChange={(event) => setStudioRuntimeValue(component, Number(event.target.value))}
+          />
+        ) : null}
+        {component.type === 'checkbox' ? (
+          <label>
+            <input type="checkbox" checked={Boolean(value)} onChange={(event) => setStudioRuntimeValue(component, event.target.checked)} /> active
+          </label>
+        ) : null}
+        {component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested' ? (
+          <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
+            {(component.options ?? []).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {component.type === 'button' ? (
+          <button
+            className="button secondary"
+            onClick={() => {
+              handleStudioButtonAction(component);
+            }}
+          >
+            {String(component.defaultValue || component.label || 'Action')}
+          </button>
+        ) : null}
+        {component.type === 'dice_roll' ? (
+          <button
+            className="button secondary"
+            onClick={() => {
+              const result = rollStudioDice(component.diceFormula || component.formula || '1d20', studioRuntimeValues);
+              if (!result) {
+                setLastStudioRollResult(`Jet invalide: ${component.diceFormula || component.formula || ''}`);
+                return;
+              }
+              const text = `${selectedCharacter?.name || 'Personnage'} lance ${component.label}: ${result.total} (${result.detail})`;
+              setLastStudioRollResult(text);
+              sendSystemMessage({
+                sessionId: currentSession.id,
+                content: `[Studio] ${text}`,
+                systemType: 'roll'
+              });
+            }}
+          >
+            Lancer ({component.diceFormula || component.formula || '1d20'})
+          </button>
+        ) : null}
+        {component.type === 'table' || component.type === 'inventory' ? <small>Colonnes: {(component.columns ?? []).join(', ') || '-'}</small> : null}
+        {component.type === 'relation' ? (
+          <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
+            <option value="">Cible</option>
+            {selectedStudioView?.components
+              .filter((candidate) => !isStudioStructuralType(candidate.type))
+              .map((candidate) => (
+                <option key={candidate.key} value={candidate.key}>
+                  {candidate.key}
+                </option>
+              ))}
+          </select>
+        ) : null}
+        {component.formula ? <small>formule: {component.formula}</small> : null}
+        {component.showIf ? <small>showIf: {component.showIf}</small> : null}
+        {studioValidationErrors[component.key] ? <small style={{ color: '#b42318' }}>{studioValidationErrors[component.key]}</small> : null}
+      </article>
+    );
+  };
+
+  const renderStudioRuntimeComponent = (component: StudioComponent, ancestry = new Set<string>()): JSX.Element | null => {
+    if (ancestry.has(component.id)) {
+      return null;
+    }
+    if (component.showIf?.trim() && !evalCondition(component.showIf, studioRuntimeValues)) {
+      return null;
+    }
+
+    const nextAncestry = new Set(ancestry);
+    nextAncestry.add(component.id);
+    const renderedChildren = (studioChildrenByParent[component.id] ?? [])
+      .map((child) => renderStudioRuntimeComponent(child, nextAncestry))
+      .filter((child): child is JSX.Element => Boolean(child));
+
+    const isContainer = isStudioStructuralType(component.type) || renderedChildren.length > 0;
+    if (!isContainer) {
+      return renderStudioRuntimeField(component);
+    }
+
+    return (
+      <article key={`studio-runtime-node-${component.id}`} className={`studio-runtime-node type-${component.type}`}>
+        <div className="studio-runtime-node__head">
+          <strong>{component.label || component.key}</strong>
+          <span className="studio-runtime-node__badge">{component.type}</span>
+        </div>
+        {renderedChildren.length > 0 ? (
+          <div className={`studio-runtime-children type-${component.type}`}>{renderedChildren}</div>
+        ) : (
+          <small>Aucun bloc enfant.</small>
+        )}
+      </article>
+    );
+  };
+
   return (
     <div className="character-widget">
       {isLoading ? <p style={{ margin: 0 }}>Chargement de la fiche...</p> : null}
@@ -846,112 +995,10 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
               ) : null}
               {lastStudioRollResult ? <p style={{ marginBottom: 0 }}>{lastStudioRollResult}</p> : null}
 
-              <div className="studio-runtime-grid" style={{ marginTop: '0.65rem' }}>
-                {selectedStudioView.components
-                  .filter((component) => {
-                    if (isStudioStructuralType(component.type)) {
-                      return false;
-                    }
-                    if (!component.showIf?.trim()) {
-                      return true;
-                    }
-                    return evalCondition(component.showIf, studioRuntimeValues);
-                  })
-                  .map((component) => {
-                  const value = studioRuntimeValues[component.key];
-                  return (
-                    <article key={`studio-runtime-${component.id}`} className="studio-runtime-item">
-                      <strong>{component.label || component.key}</strong>
-                      <small>{component.key}</small>
-
-                      {component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar' ? (
-                        <input
-                          type={component.type === 'color' ? 'color' : component.type === 'date' ? 'date' : component.type === 'time' ? 'time' : 'text'}
-                          value={typeof value === 'string' ? value : ''}
-                          onChange={(event) => setStudioRuntimeValue(component, event.target.value)}
-                        />
-                      ) : null}
-                      {component.type === 'textarea' ? (
-                        <textarea rows={2} value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)} />
-                      ) : null}
-                      {component.type === 'number' || component.type === 'range' ? (
-                        <input
-                          type={component.type === 'number' ? 'number' : 'range'}
-                          min={component.min ?? 0}
-                          max={component.max ?? 100}
-                          step={component.step ?? 1}
-                          value={typeof value === 'number' ? value : 0}
-                          onChange={(event) => setStudioRuntimeValue(component, Number(event.target.value))}
-                        />
-                      ) : null}
-                      {component.type === 'checkbox' ? (
-                        <label>
-                          <input type="checkbox" checked={Boolean(value)} onChange={(event) => setStudioRuntimeValue(component, event.target.checked)} /> active
-                        </label>
-                      ) : null}
-                      {component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested' ? (
-                        <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
-                          {(component.options ?? []).map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      ) : null}
-                      {component.type === 'button' ? (
-                        <button
-                          className="button secondary"
-                          onClick={() => {
-                            handleStudioButtonAction(component);
-                          }}
-                        >
-                          {String(component.defaultValue || component.label || 'Action')}
-                        </button>
-                      ) : null}
-                      {component.type === 'dice_roll' ? (
-                        <button
-                          className="button secondary"
-                          onClick={() => {
-                            const result = rollStudioDice(component.diceFormula || component.formula || '1d20', studioRuntimeValues);
-                            if (!result) {
-                              setLastStudioRollResult(`Jet invalide: ${component.diceFormula || component.formula || ''}`);
-                              return;
-                            }
-                            const text = `${selectedCharacter?.name || 'Personnage'} lance ${component.label}: ${result.total} (${result.detail})`;
-                            setLastStudioRollResult(text);
-                            sendSystemMessage({
-                              sessionId: currentSession.id,
-                              content: `[Studio] ${text}`,
-                              systemType: 'roll'
-                            });
-                          }}
-                        >
-                          Lancer ({component.diceFormula || component.formula || '1d20'})
-                        </button>
-                      ) : null}
-                      {component.type === 'table' || component.type === 'inventory' ? (
-                        <small>Colonnes: {(component.columns ?? []).join(', ') || '-'}</small>
-                      ) : null}
-                      {component.type === 'relation' ? (
-                        <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
-                          <option value="">Cible</option>
-                          {selectedStudioView.components
-                            .filter((candidate) => !isStudioStructuralType(candidate.type))
-                            .map((candidate) => (
-                            <option key={candidate.key} value={candidate.key}>
-                              {candidate.key}
-                            </option>
-                            ))}
-                        </select>
-                      ) : null}
-                      {component.formula ? <small>formule: {component.formula}</small> : null}
-                      {component.showIf ? <small>showIf: {component.showIf}</small> : null}
-                      {studioValidationErrors[component.key] ? (
-                        <small style={{ color: '#b42318' }}>{studioValidationErrors[component.key]}</small>
-                      ) : null}
-                    </article>
-                  );
-                })}
+              <div className="studio-runtime-tree" style={{ marginTop: '0.65rem' }}>
+                {studioRootComponents
+                  .map((component) => renderStudioRuntimeComponent(component, new Set<string>()))
+                  .filter((item): item is JSX.Element => Boolean(item))}
               </div>
             </section>
           ) : null}

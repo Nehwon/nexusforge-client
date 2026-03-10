@@ -1590,16 +1590,13 @@ export default function SystemStudioPage() {
 
   const relationTargets =
     selectedView?.components.filter((component) => !isStructuralType(component.type)).map((component) => component.key) ?? [];
-  const visibleRuntimeComponents =
-    selectedView?.components.filter((component) => {
-      if (isStructuralType(component.type)) {
-        return false;
-      }
-      if (!component.showIf?.trim()) {
-        return true;
-      }
-      return evaluateCondition(component.showIf, runtimeValues);
-    }) ?? [];
+  const runtimeRootComponents = useMemo(() => {
+    if (!selectedView) {
+      return [];
+    }
+    const existingIds = new Set(selectedView.components.map((component) => component.id));
+    return selectedView.components.filter((component) => !component.parentId || !existingIds.has(component.parentId));
+  }, [selectedView]);
 
   const runButtonScript = (component: StudioComponentDefinition) => {
     const script = component.actionScript?.trim() || component.formula?.trim() || '';
@@ -1611,6 +1608,142 @@ export default function SystemStudioPage() {
     const computed = applyDerivedFormulas(selectedView?.components ?? [], nextValues);
     setRuntimeValues(computed);
     setRuntimeMessage(logs.length > 0 ? logs.join(' | ') : 'Script execute.');
+  };
+
+  const renderRuntimeField = (component: StudioComponentDefinition): JSX.Element => {
+    const value = runtimeValues[component.key];
+    return (
+      <article key={`runtime-${component.id}`} className="studio-runtime-item">
+        <strong>{component.label || component.key}</strong>
+        <small>{component.key}</small>
+        {component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar' ? (
+          <input
+            type={component.type === 'color' ? 'color' : component.type === 'date' ? 'date' : component.type === 'time' ? 'time' : 'text'}
+            value={typeof value === 'string' ? value : ''}
+            onChange={(event) => setRuntimeValue(component, event.target.value)}
+          />
+        ) : null}
+        {component.type === 'textarea' ? (
+          <textarea rows={2} value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)} />
+        ) : null}
+        {component.type === 'number' || component.type === 'range' ? (
+          <input
+            type={component.type === 'number' ? 'number' : 'range'}
+            min={component.min ?? 0}
+            max={component.max ?? 100}
+            step={component.step ?? 1}
+            value={typeof value === 'number' ? value : 0}
+            onChange={(event) => setRuntimeValue(component, Number(event.target.value))}
+          />
+        ) : null}
+        {component.type === 'checkbox' ? (
+          <label>
+            <input type="checkbox" checked={Boolean(value)} onChange={(event) => setRuntimeValue(component, event.target.checked)} /> active
+          </label>
+        ) : null}
+        {component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested' ? (
+          <select value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)}>
+            {(component.options ?? []).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {component.type === 'button' ? (
+          <button className="button secondary" onClick={() => runButtonScript(component)}>
+            {String(component.defaultValue || component.label || 'Action')}
+          </button>
+        ) : null}
+        {component.type === 'label' ? <p style={{ margin: 0 }}>{String(component.defaultValue || component.label || '')}</p> : null}
+        {component.type === 'dice_roll' ? (
+          <button
+            className="button secondary"
+            onClick={() => {
+              const result = rollDice(component.diceFormula || component.formula || '1d20', runtimeValues);
+              if (!result) {
+                setRuntimeMessage(`Jet invalide: ${component.diceFormula || component.formula || ''}`);
+                return;
+              }
+              setRuntimeMessage(`Jet ${component.label}: ${result.total} (${result.detail})`);
+            }}
+          >
+            Lancer ({component.diceFormula || component.formula || '1d20'})
+          </button>
+        ) : null}
+        {component.type === 'table' || component.type === 'inventory' ? (
+          <div style={{ display: 'grid', gap: '0.3rem' }}>
+            <code>{(component.columns ?? []).join(' | ')}</code>
+            <button
+              className="button secondary"
+              onClick={() => {
+                const columns = component.columns ?? ['Nom', 'Valeur'];
+                const row = columns.reduce<Record<string, string>>((acc, column) => {
+                  acc[column] = '';
+                  return acc;
+                }, {});
+                const rows = Array.isArray(value) ? (value as Array<Record<string, string>>) : [];
+                setRuntimeValue(component, [...rows, row]);
+              }}
+            >
+              Ajouter ligne
+            </button>
+            <small>Lignes: {Array.isArray(value) ? value.length : 0}</small>
+          </div>
+        ) : null}
+        {component.type === 'relation' ? (
+          <div style={{ display: 'grid', gap: '0.25rem' }}>
+            <select value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)}>
+              <option value="">Cible</option>
+              {relationTargets.map((target) => (
+                <option key={target} value={target}>
+                  {target}
+                </option>
+              ))}
+            </select>
+            <small>target: {component.relationTarget || '(non defini)'}</small>
+          </div>
+        ) : null}
+        {component.formula ? <small>formule: {component.formula}</small> : null}
+        {component.reference ? <small>ref: {component.reference}</small> : null}
+        {component.showIf ? <small>showIf: {component.showIf}</small> : null}
+        {runtimeValidationErrors[component.key] ? <small style={{ color: '#b42318' }}>{runtimeValidationErrors[component.key]}</small> : null}
+      </article>
+    );
+  };
+
+  const renderRuntimeComponent = (component: StudioComponentDefinition, ancestry = new Set<string>()): JSX.Element | null => {
+    if (ancestry.has(component.id)) {
+      return null;
+    }
+    if (component.showIf?.trim() && !evaluateCondition(component.showIf, runtimeValues)) {
+      return null;
+    }
+
+    const nextAncestry = new Set(ancestry);
+    nextAncestry.add(component.id);
+    const renderedChildren = (childrenByParent[component.id] ?? [])
+      .map((child) => renderRuntimeComponent(child, nextAncestry))
+      .filter((child): child is JSX.Element => Boolean(child));
+
+    const isContainer = isStructuralType(component.type) || renderedChildren.length > 0;
+    if (!isContainer) {
+      return renderRuntimeField(component);
+    }
+
+    return (
+      <article key={`runtime-node-${component.id}`} className={`studio-runtime-node type-${component.type}`}>
+        <div className="studio-runtime-node__head">
+          <strong>{component.label || component.key}</strong>
+          <span className="studio-runtime-node__badge">{component.type}</span>
+        </div>
+        {renderedChildren.length > 0 ? (
+          <div className={`studio-runtime-children type-${component.type}`}>{renderedChildren}</div>
+        ) : (
+          <small>Aucun bloc enfant.</small>
+        )}
+      </article>
+    );
   };
 
   const runScriptTester = () => {
@@ -2025,113 +2158,10 @@ export default function SystemStudioPage() {
                   {!selectedView || selectedView.components.length === 0 ? (
                     <p style={{ margin: 0 }}>Ajoute des composants pour voir un rendu interactif.</p>
                   ) : (
-                    <div className="studio-runtime-grid">
-                      {visibleRuntimeComponents.map((component) => {
-                        const value = runtimeValues[component.key];
-                        return (
-                          <article key={`runtime-${component.id}`} className="studio-runtime-item">
-                            <strong>{component.label || component.key}</strong>
-                            <small>{component.key}</small>
-                            {component.type === 'text' || component.type === 'color' || component.type === 'date' || component.type === 'time' || component.type === 'avatar' ? (
-                              <input
-                                type={component.type === 'color' ? 'color' : component.type === 'date' ? 'date' : component.type === 'time' ? 'time' : 'text'}
-                                value={typeof value === 'string' ? value : ''}
-                                onChange={(event) => setRuntimeValue(component, event.target.value)}
-                              />
-                            ) : null}
-                            {component.type === 'textarea' ? (
-                              <textarea rows={2} value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)} />
-                            ) : null}
-                            {component.type === 'number' || component.type === 'range' ? (
-                              <input
-                                type={component.type === 'number' ? 'number' : 'range'}
-                                min={component.min ?? 0}
-                                max={component.max ?? 100}
-                                step={component.step ?? 1}
-                                value={typeof value === 'number' ? value : 0}
-                                onChange={(event) => setRuntimeValue(component, Number(event.target.value))}
-                              />
-                            ) : null}
-                            {component.type === 'checkbox' ? (
-                              <label>
-                                <input type="checkbox" checked={Boolean(value)} onChange={(event) => setRuntimeValue(component, event.target.checked)} /> active
-                              </label>
-                            ) : null}
-                            {component.type === 'choice' || component.type === 'tabs' || component.type === 'tabs_nested' ? (
-                              <select value={typeof value === 'string' ? value : ''} onChange={(event) => setRuntimeValue(component, event.target.value)}>
-                                {(component.options ?? []).map((option) => (
-                                  <option key={option} value={option}>
-                                    {option}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : null}
-                            {component.type === 'button' ? (
-                              <button className="button secondary" onClick={() => runButtonScript(component)}>
-                                {String(component.defaultValue || component.label || 'Action')}
-                              </button>
-                            ) : null}
-                            {component.type === 'label' ? <p style={{ margin: 0 }}>{String(component.defaultValue || component.label || '')}</p> : null}
-                            {component.type === 'dice_roll' ? (
-                              <button
-                                className="button secondary"
-                                onClick={() => {
-                                  const result = rollDice(component.diceFormula || component.formula || '1d20', runtimeValues);
-                                  if (!result) {
-                                    setRuntimeMessage(`Jet invalide: ${component.diceFormula || component.formula || ''}`);
-                                    return;
-                                  }
-                                  setRuntimeMessage(`Jet ${component.label}: ${result.total} (${result.detail})`);
-                                }}
-                              >
-                                Lancer ({component.diceFormula || component.formula || '1d20'})
-                              </button>
-                            ) : null}
-                            {component.type === 'table' || component.type === 'inventory' ? (
-                              <div style={{ display: 'grid', gap: '0.3rem' }}>
-                                <code>{(component.columns ?? []).join(' | ')}</code>
-                                <button
-                                  className="button secondary"
-                                  onClick={() => {
-                                    const columns = component.columns ?? ['Nom', 'Valeur'];
-                                    const row = columns.reduce<Record<string, string>>((acc, column) => {
-                                      acc[column] = '';
-                                      return acc;
-                                    }, {});
-                                    const rows = Array.isArray(value) ? (value as Array<Record<string, string>>) : [];
-                                    setRuntimeValue(component, [...rows, row]);
-                                  }}
-                                >
-                                  Ajouter ligne
-                                </button>
-                                <small>Lignes: {Array.isArray(value) ? value.length : 0}</small>
-                              </div>
-                            ) : null}
-                            {component.type === 'relation' ? (
-                              <div style={{ display: 'grid', gap: '0.25rem' }}>
-                                <select
-                                  value={typeof value === 'string' ? value : ''}
-                                  onChange={(event) => setRuntimeValue(component, event.target.value)}
-                                >
-                                  <option value="">Cible</option>
-                                  {relationTargets.map((target) => (
-                                    <option key={target} value={target}>
-                                      {target}
-                                    </option>
-                                  ))}
-                                </select>
-                                <small>target: {component.relationTarget || '(non defini)'}</small>
-                              </div>
-                            ) : null}
-                            {component.formula ? <small>formule: {component.formula}</small> : null}
-                            {component.reference ? <small>ref: {component.reference}</small> : null}
-                            {component.showIf ? <small>showIf: {component.showIf}</small> : null}
-                            {runtimeValidationErrors[component.key] ? (
-                              <small style={{ color: '#b42318' }}>{runtimeValidationErrors[component.key]}</small>
-                            ) : null}
-                          </article>
-                        );
-                      })}
+                    <div className="studio-runtime-tree">
+                      {runtimeRootComponents
+                        .map((component) => renderRuntimeComponent(component, new Set<string>()))
+                        .filter((item): item is JSX.Element => Boolean(item))}
                     </div>
                   )}
                   </section>

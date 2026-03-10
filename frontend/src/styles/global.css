@@ -1239,10 +1239,52 @@ body.theme-dark .system-builder__toolbar {
   background: #ffffff;
 }
 
+.studio-runtime-tree {
+  display: grid;
+  gap: 0.65rem;
+}
+
 .studio-runtime-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 0.6rem;
+}
+
+.studio-runtime-node {
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.studio-runtime-node__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.studio-runtime-node__badge {
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+}
+
+.studio-runtime-children {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.studio-runtime-children.type-row {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.studio-runtime-children.type-column {
+  grid-template-columns: 1fr;
 }
 
 .studio-runtime-item {
@@ -1370,6 +1412,15 @@ body.theme-dark .studio-component-card.family-field {
 body.theme-dark .studio-runtime {
   border-color: #334155;
   background: #111827;
+}
+
+body.theme-dark .studio-runtime-node {
+  border-color: #334155;
+  background: #0f172a;
+}
+
+body.theme-dark .studio-runtime-node__badge {
+  border-color: #475569;
 }
 
 body.theme-dark .studio-runtime-item {
