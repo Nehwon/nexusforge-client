@@ -168,6 +168,7 @@ Ce script:
 - déploie frontend + backend,
 - préserve `backend/data` et `backend/.env`,
 - redémarre l'application Node.
+- réécrit `nexusforge.en-ligne.fr/.htaccess` pour garantir le fallback SPA (`/login`, `/sessions/...`) même après refresh F5.
 
 ### Backend inclus dans ce repo
 

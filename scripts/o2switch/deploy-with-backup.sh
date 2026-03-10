@@ -39,6 +39,19 @@ echo "[3/4] Deploy frontend"
 rsync -az --delete -e "ssh -i ${SSH_KEY} -o StrictHostKeyChecking=no" \
   "${ROOT_DIR}/frontend/dist/" "${O2_USER}@${O2_HOST}:${REMOTE_FRONTEND_DIR}/"
 
+# Force SPA rewrite file on remote (safety net for refresh/F5 on nested routes)
+ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no "${O2_USER}@${O2_HOST}" \
+  "cat > '${REMOTE_FRONTEND_DIR}/.htaccess' <<'HTA'
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+  RewriteRule ^ index.html [L]
+</IfModule>
+HTA"
+
 echo "[4/4] Deploy backend (preserve data + .env) and restart"
 rsync -az --delete \
   --exclude node_modules \
