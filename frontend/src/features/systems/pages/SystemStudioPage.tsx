@@ -1844,8 +1844,19 @@ export default function SystemStudioPage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  onClick={() => setIsHtmlImportModalOpen(true)}
-                  disabled={!canEdit || !selectedView}
+                  onClick={() => {
+                    if (!canEdit) {
+                      setErrorMessage('Lecture seule: seul le proprietaire ou un admin peut importer du HTML.');
+                      return;
+                    }
+                    if (!selectedView) {
+                      setErrorMessage('Aucune vue active: cree ou selectionne une vue avant import.');
+                      return;
+                    }
+                    setErrorMessage(null);
+                    setIsHtmlImportModalOpen(true);
+                  }}
+                  disabled={!canEdit}
                 >
                   Convertir HTML (popup)
                 </Button>
@@ -2566,7 +2577,7 @@ export default function SystemStudioPage() {
           style={{
             position: 'fixed',
             inset: 0,
-            zIndex: 1200,
+            zIndex: 2600,
             background: 'rgba(3, 12, 26, 0.75)',
             display: 'grid',
             placeItems: 'center',
