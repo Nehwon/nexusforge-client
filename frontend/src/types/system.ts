@@ -69,7 +69,12 @@ export type StudioComponentType =
   | 'column'
   | 'tabs'
   | 'view'
-  | 'repeater';
+  | 'repeater'
+  | 'dice_roll'
+  | 'table'
+  | 'inventory'
+  | 'relation'
+  | 'tabs_nested';
 
 export interface StudioComponentDefinition {
   id: string;
@@ -83,6 +88,10 @@ export interface StudioComponentDefinition {
   max?: number;
   step?: number;
   required?: boolean;
+  columns?: string[];
+  diceFormula?: string;
+  relationTarget?: string;
+  allowMultiple?: boolean;
   reference?: string;
   formula?: string;
 }

@@ -12,11 +12,12 @@ import {
   StudioViewDefinition
 } from '../../../types/system';
 
-const PALETTE_TREE: Array<{
-  id: string;
-  label: string;
-  items: Array<{ type: StudioComponentType; label: string; defaultValue?: string | number | boolean; options?: string[] }>;
-}> = [
+type PaletteItem = { type: StudioComponentType; label: string; defaultValue?: string | number | boolean; options?: string[] };
+const STUDIO_LEFT_WIDTH_KEY = 'nexusforge.studio.leftWidth';
+const STUDIO_RIGHT_WIDTH_KEY = 'nexusforge.studio.rightWidth';
+const STUDIO_FULLSCREEN_KEY = 'nexusforge.studio.fullscreen';
+
+const PALETTE_TREE: Array<{ id: string; label: string; items: PaletteItem[] }> = [
   {
     id: 'basic-inputs',
     label: 'Champs de base',
@@ -44,7 +45,7 @@ const PALETTE_TREE: Array<{
     label: 'Affichage / actions',
     items: [
       { type: 'label', label: 'Label / texte statique', defaultValue: 'Titre de section' },
-      { type: 'icon', label: 'Icône' },
+      { type: 'icon', label: 'Icone' },
       { type: 'button', label: 'Bouton', defaultValue: 'Action' }
     ]
   },
@@ -56,8 +57,19 @@ const PALETTE_TREE: Array<{
       { type: 'row', label: 'Ligne' },
       { type: 'column', label: 'Colonne' },
       { type: 'tabs', label: 'Onglets', options: ['Vue 1', 'Vue 2'] },
+      { type: 'tabs_nested', label: 'Onglets imbriques', options: ['Bloc A', 'Bloc B'] },
       { type: 'view', label: 'Bloc vue' },
-      { type: 'repeater', label: 'Liste répétable', options: ['Ligne 1'] }
+      { type: 'repeater', label: 'Liste repetable', options: ['Ligne 1'] }
+    ]
+  },
+  {
+    id: 'rpg-specialized',
+    label: 'Composants JDR',
+    items: [
+      { type: 'dice_roll', label: 'Jet de des', defaultValue: '1d20+@mod' },
+      { type: 'table', label: 'Tableau', options: ['Nom', 'Valeur'] },
+      { type: 'inventory', label: 'Inventaire', options: ['Nom', 'Quantite', 'Poids'] },
+      { type: 'relation', label: 'Reference relationnelle' }
     ]
   }
 ];
@@ -77,43 +89,79 @@ function ensureSchema(system: GameSystem): StudioSchema {
   }
 
   return {
-    views: [
-      {
-        id: makeId('view'),
-        name: 'Vue principale',
-        components: []
-      }
-    ]
+    views: [{ id: makeId('view'), name: 'Vue principale', components: [] }]
   };
 }
 
-function createComponentFromPalette(
-  type: StudioComponentType,
-  label: string,
-  defaultValue?: string | number | boolean,
-  options?: string[]
-): StudioComponentDefinition {
+function createComponentFromPalette(item: PaletteItem): StudioComponentDefinition {
   return {
     id: makeId('cmp'),
-    type,
-    label,
-    key: `${type}_${Math.random().toString(36).slice(2, 6)}`,
-    defaultValue,
+    type: item.type,
+    label: item.label,
+    key: `${item.type}_${Math.random().toString(36).slice(2, 6)}`,
+    defaultValue: item.defaultValue,
     placeholder: '',
-    options,
-    min: type === 'range' ? 0 : undefined,
-    max: type === 'range' ? 100 : undefined,
-    step: type === 'range' ? 1 : undefined,
+    options: item.options,
+    min: item.type === 'range' ? 0 : undefined,
+    max: item.type === 'range' ? 100 : undefined,
+    step: item.type === 'range' ? 1 : undefined,
     required: false,
+    columns: item.type === 'table' || item.type === 'inventory' ? item.options ?? ['Nom', 'Valeur'] : undefined,
+    diceFormula: item.type === 'dice_roll' ? String(item.defaultValue ?? '1d20') : undefined,
+    relationTarget: item.type === 'relation' ? '' : undefined,
+    allowMultiple: item.type === 'relation' ? false : undefined,
     reference: '',
     formula: ''
   };
+}
+
+function renderComponentPreview(component: StudioComponentDefinition): JSX.Element {
+  if (component.type === 'checkbox') {
+    return <label><input type="checkbox" disabled checked={Boolean(component.defaultValue)} /> {component.label}</label>;
+  }
+  if (component.type === 'choice') {
+    return (
+      <select disabled defaultValue="">
+        <option value="">{component.placeholder || 'Choisir'}</option>
+        {(component.options ?? []).map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+      </select>
+    );
+  }
+  if (component.type === 'textarea') {
+    return <textarea disabled rows={2} placeholder={component.placeholder || component.label} />;
+  }
+  if (component.type === 'range') {
+    return <input type="range" disabled min={component.min ?? 0} max={component.max ?? 100} step={component.step ?? 1} value={typeof component.defaultValue === 'number' ? component.defaultValue : 0} />;
+  }
+  if (component.type === 'dice_roll') {
+    return <code>{component.diceFormula || component.formula || '1d20'}</code>;
+  }
+  if (component.type === 'table' || component.type === 'inventory') {
+    const headers = component.columns ?? ['Col A', 'Col B'];
+    return (
+      <div style={{ display: 'grid', gap: '0.2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${headers.length}, minmax(0, 1fr))`, gap: '0.25rem', fontSize: '0.75rem' }}>
+          {headers.map((header) => <strong key={header}>{header}</strong>)}
+        </div>
+      </div>
+    );
+  }
+  if (component.type === 'relation') {
+    return <code>ref: {component.relationTarget || 'target'}</code>;
+  }
+  if (component.type === 'button') {
+    return <button className="button secondary" type="button" disabled>{String(component.defaultValue || component.label || 'Action')}</button>;
+  }
+  return <input type={component.type === 'number' ? 'number' : 'text'} disabled placeholder={component.placeholder || component.label} />;
 }
 
 export default function SystemStudioPage() {
   const { currentUser } = useAuth();
   const { systemId } = useParams();
   const studioLayoutRef = useRef<HTMLElement | null>(null);
+
   const [system, setSystem] = useState<GameSystem | null>(null);
   const [schema, setSchema] = useState<StudioSchema | null>(null);
   const [selectedViewId, setSelectedViewId] = useState('');
@@ -132,21 +180,18 @@ export default function SystemStudioPage() {
 
     async function load() {
       if (!systemId) {
-        setErrorMessage('ID système manquant.');
+        setErrorMessage('ID systeme manquant.');
         setIsLoading(false);
         return;
       }
-
       try {
         const loaded = await systemRepository.getById(systemId);
         if (!loaded) {
-          throw new Error('Système introuvable.');
+          throw new Error('Systeme introuvable.');
         }
-
         if (!isMounted) {
           return;
         }
-
         const normalized = ensureSchema(loaded);
         setSystem(loaded);
         setSchema(normalized);
@@ -163,11 +208,37 @@ export default function SystemStudioPage() {
     }
 
     void load();
-
     return () => {
       isMounted = false;
     };
   }, [systemId]);
+
+  useEffect(() => {
+    const storedLeft = Number(localStorage.getItem(STUDIO_LEFT_WIDTH_KEY) ?? 290);
+    const storedRight = Number(localStorage.getItem(STUDIO_RIGHT_WIDTH_KEY) ?? 330);
+    const storedFullscreen = localStorage.getItem(STUDIO_FULLSCREEN_KEY);
+    if (Number.isFinite(storedLeft) && storedLeft >= 220 && storedLeft <= 520) {
+      setLeftPanelWidth(storedLeft);
+    }
+    if (Number.isFinite(storedRight) && storedRight >= 220 && storedRight <= 520) {
+      setRightPanelWidth(storedRight);
+    }
+    if (storedFullscreen === 'true') {
+      setIsFullscreen(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STUDIO_LEFT_WIDTH_KEY, String(leftPanelWidth));
+  }, [leftPanelWidth]);
+
+  useEffect(() => {
+    localStorage.setItem(STUDIO_RIGHT_WIDTH_KEY, String(rightPanelWidth));
+  }, [rightPanelWidth]);
+
+  useEffect(() => {
+    localStorage.setItem(STUDIO_FULLSCREEN_KEY, isFullscreen ? 'true' : 'false');
+  }, [isFullscreen]);
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
 
@@ -186,22 +257,26 @@ export default function SystemStudioPage() {
   }, [selectedComponentId, selectedView]);
 
   const updateSchema = (update: (current: StudioSchema) => StudioSchema) => {
-    setSchema((current) => {
-      if (!current) {
-        return current;
-      }
-      return update(current);
-    });
+    setSchema((current) => (current ? update(current) : current));
   };
 
   const updateSelectedView = (update: (view: StudioViewDefinition) => StudioViewDefinition) => {
     if (!selectedView) {
       return;
     }
-
     updateSchema((current) => ({
       ...current,
       views: current.views.map((view) => (view.id === selectedView.id ? update(view) : view))
+    }));
+  };
+
+  const updateSelectedComponent = (update: (component: StudioComponentDefinition) => StudioComponentDefinition) => {
+    if (!selectedView || !selectedComponent) {
+      return;
+    }
+    updateSelectedView((view) => ({
+      ...view,
+      components: view.components.map((item) => (item.id === selectedComponent.id ? update(item) : item))
     }));
   };
 
@@ -219,11 +294,9 @@ export default function SystemStudioPage() {
       const maxRight = Math.max(minPanel, containerWidth - leftPanelWidth - 460);
 
       if (side === 'left') {
-        const nextLeft = Math.min(Math.max(minPanel, startLeft + deltaX), maxLeft);
-        setLeftPanelWidth(nextLeft);
+        setLeftPanelWidth(Math.min(Math.max(minPanel, startLeft + deltaX), maxLeft));
       } else {
-        const nextRight = Math.min(Math.max(minPanel, startRight - deltaX), maxRight);
-        setRightPanelWidth(nextRight);
+        setRightPanelWidth(Math.min(Math.max(minPanel, startRight - deltaX), maxRight));
       }
     };
 
@@ -236,10 +309,7 @@ export default function SystemStudioPage() {
     window.addEventListener('mouseup', onMouseUp);
   };
 
-  const handlePaletteDragStart = (
-    event: DragEvent<HTMLElement>,
-    item: { type: StudioComponentType; label: string; defaultValue?: string | number | boolean; options?: string[] }
-  ) => {
+  const handlePaletteDragStart = (event: DragEvent<HTMLElement>, item: PaletteItem) => {
     event.dataTransfer.setData('application/nexusforge-palette', JSON.stringify(item));
     event.dataTransfer.effectAllowed = 'copy';
   };
@@ -253,21 +323,15 @@ export default function SystemStudioPage() {
     if (!selectedView || sourceId === targetId) {
       return;
     }
-
     const components = [...selectedView.components];
     const sourceIndex = components.findIndex((item) => item.id === sourceId);
     const targetIndex = components.findIndex((item) => item.id === targetId);
     if (sourceIndex < 0 || targetIndex < 0) {
       return;
     }
-
     const [moved] = components.splice(sourceIndex, 1);
     components.splice(targetIndex, 0, moved);
-
-    updateSelectedView((view) => ({
-      ...view,
-      components
-    }));
+    updateSelectedView((view) => ({ ...view, components }));
   };
 
   const handleCanvasDrop = (event: DragEvent<HTMLElement>) => {
@@ -279,17 +343,9 @@ export default function SystemStudioPage() {
     const paletteRaw = event.dataTransfer.getData('application/nexusforge-palette');
     if (paletteRaw) {
       try {
-        const paletteItem = JSON.parse(paletteRaw) as {
-          type: StudioComponentType;
-          label: string;
-          defaultValue?: string | number | boolean;
-          options?: string[];
-        };
-        const created = createComponentFromPalette(paletteItem.type, paletteItem.label, paletteItem.defaultValue, paletteItem.options);
-        updateSelectedView((view) => ({
-          ...view,
-          components: [...view.components, created]
-        }));
+        const item = JSON.parse(paletteRaw) as PaletteItem;
+        const created = createComponentFromPalette(item);
+        updateSelectedView((view) => ({ ...view, components: [...view.components, created] }));
         setSelectedComponentId(created.id);
       } catch {
         setErrorMessage('Composant palette invalide.');
@@ -307,10 +363,7 @@ export default function SystemStudioPage() {
         }
         const [moved] = components.splice(sourceIndex, 1);
         components.push(moved);
-        return {
-          ...view,
-          components
-        };
+        return { ...view, components };
       });
     }
   };
@@ -318,7 +371,7 @@ export default function SystemStudioPage() {
   const handleComponentDrop = (event: DragEvent<HTMLElement>, targetComponentId: string) => {
     event.preventDefault();
     setDragOverComponentId(null);
-    if (!canEdit) {
+    if (!canEdit || !selectedView) {
       return;
     }
 
@@ -329,27 +382,18 @@ export default function SystemStudioPage() {
     }
 
     const paletteRaw = event.dataTransfer.getData('application/nexusforge-palette');
-    if (!paletteRaw || !selectedView) {
+    if (!paletteRaw) {
       return;
     }
 
     try {
-      const paletteItem = JSON.parse(paletteRaw) as {
-        type: StudioComponentType;
-        label: string;
-        defaultValue?: string | number | boolean;
-        options?: string[];
-      };
-      const created = createComponentFromPalette(paletteItem.type, paletteItem.label, paletteItem.defaultValue, paletteItem.options);
+      const item = JSON.parse(paletteRaw) as PaletteItem;
+      const created = createComponentFromPalette(item);
       const components = [...selectedView.components];
       const targetIndex = components.findIndex((component) => component.id === targetComponentId);
       const insertionIndex = targetIndex >= 0 ? targetIndex : components.length;
       components.splice(insertionIndex, 0, created);
-
-      updateSelectedView((view) => ({
-        ...view,
-        components
-      }));
+      updateSelectedView((view) => ({ ...view, components }));
       setSelectedComponentId(created.id);
     } catch {
       setErrorMessage('Composant palette invalide.');
@@ -360,17 +404,8 @@ export default function SystemStudioPage() {
     if (!canEdit || !schema) {
       return;
     }
-
-    const view: StudioViewDefinition = {
-      id: makeId('view'),
-      name: `Vue ${schema.views.length + 1}`,
-      components: []
-    };
-
-    setSchema({
-      ...schema,
-      views: [...schema.views, view]
-    });
+    const view: StudioViewDefinition = { id: makeId('view'), name: `Vue ${schema.views.length + 1}`, components: [] };
+    setSchema({ ...schema, views: [...schema.views, view] });
     setSelectedViewId(view.id);
     setSelectedComponentId('');
   };
@@ -379,7 +414,6 @@ export default function SystemStudioPage() {
     if (!canEdit || !schema || !selectedView || schema.views.length <= 1) {
       return;
     }
-
     const nextViews = schema.views.filter((view) => view.id !== selectedView.id);
     setSchema({ ...schema, views: nextViews });
     setSelectedViewId(nextViews[0]?.id ?? '');
@@ -390,42 +424,22 @@ export default function SystemStudioPage() {
     if (!canEdit || !selectedView || !selectedComponent) {
       return;
     }
-
-    updateSelectedView((view) => ({
-      ...view,
-      components: view.components.filter((item) => item.id !== selectedComponent.id)
-    }));
+    updateSelectedView((view) => ({ ...view, components: view.components.filter((item) => item.id !== selectedComponent.id) }));
     setSelectedComponentId('');
-  };
-
-  const updateSelectedComponent = (update: (component: StudioComponentDefinition) => StudioComponentDefinition) => {
-    if (!selectedView || !selectedComponent) {
-      return;
-    }
-
-    updateSelectedView((view) => ({
-      ...view,
-      components: view.components.map((item) => (item.id === selectedComponent.id ? update(item) : item))
-    }));
   };
 
   const saveStudio = async () => {
     if (!currentUser || !system || !schema || !canEdit) {
       return;
     }
-
     setErrorMessage(null);
     setStatusMessage(null);
     setIsSaving(true);
-
     try {
-      const nextSystem: GameSystem = {
-        ...system,
-        studioSchema: schema
-      };
+      const nextSystem: GameSystem = { ...system, studioSchema: schema };
       await systemRepository.upsert(nextSystem, currentUser);
       setSystem(nextSystem);
-      setStatusMessage('Studio sauvegardé.');
+      setStatusMessage('Studio sauvegarde.');
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Sauvegarde impossible.');
     } finally {
@@ -433,10 +447,20 @@ export default function SystemStudioPage() {
     }
   };
 
-  const layoutStyle =
-    typeof window !== 'undefined' && window.innerWidth > 900
-      ? { gridTemplateColumns: `${leftPanelWidth}px 8px minmax(420px, 1fr) 8px ${rightPanelWidth}px` }
-      : undefined;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void saveStudio();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
+  const layoutStyle = typeof window !== 'undefined' && window.innerWidth > 900
+    ? { gridTemplateColumns: `${leftPanelWidth}px 8px minmax(420px, 1fr) 8px ${rightPanelWidth}px` }
+    : undefined;
 
   return (
     <Layout wide>
@@ -447,21 +471,21 @@ export default function SystemStudioPage() {
           <section className="card" style={{ marginBottom: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.7rem', flexWrap: 'wrap' }}>
               <div>
-                <h1 style={{ marginTop: 0, marginBottom: '0.35rem' }}>Studio de création système</h1>
+                <h1 style={{ marginTop: 0, marginBottom: '0.35rem' }}>Studio de creation systeme</h1>
                 <p style={{ marginTop: 0, marginBottom: 0 }}>
-                  <Link to="/systems">Retour Atelier</Link> | Système: <strong>{system?.name ?? 'N/A'}</strong>
+                  <Link to="/systems">Retour Atelier</Link> | Systeme: <strong>{system?.name ?? 'N/A'}</strong>
                 </p>
               </div>
               <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
                 <Button type="button" variant="secondary" onClick={() => setIsFullscreen((current) => !current)}>
-                  {isFullscreen ? 'Quitter plein écran studio' : 'Plein écran studio'}
+                  {isFullscreen ? 'Quitter plein ecran studio' : 'Plein ecran studio'}
                 </Button>
                 <Button type="button" onClick={() => void saveStudio()} disabled={!canEdit || isSaving}>
                   {isSaving ? 'Sauvegarde...' : 'Sauvegarder'}
                 </Button>
               </div>
             </div>
-            {!canEdit ? <p style={{ marginBottom: 0, color: '#b42318' }}>Lecture seule: seul le propriétaire ou un admin peut modifier.</p> : null}
+            {!canEdit ? <p style={{ marginBottom: 0, color: '#b42318' }}>Lecture seule: proprietaire/admin uniquement.</p> : null}
             {statusMessage ? <p style={{ marginBottom: 0, color: '#067647' }}>{statusMessage}</p> : null}
             {errorMessage ? <p style={{ marginBottom: 0, color: '#b42318' }}>{errorMessage}</p> : null}
           </section>
@@ -470,7 +494,7 @@ export default function SystemStudioPage() {
             <section ref={studioLayoutRef} className="studio-layout" style={layoutStyle}>
               <aside className="studio-panel">
                 <h2 style={{ marginTop: 0 }}>Arborescence composants</h2>
-                <p style={{ marginTop: 0, fontSize: '0.9rem' }}>Glisse-dépose vers la vue centrale.</p>
+                <p style={{ marginTop: 0, fontSize: '0.9rem' }}>Glisse-depose vers la vue centrale.</p>
                 <div className="studio-tree">
                   {PALETTE_TREE.map((branch) => (
                     <details key={branch.id} open>
@@ -535,26 +559,19 @@ export default function SystemStudioPage() {
                         <input
                           type="text"
                           value={selectedView.name}
-                          onChange={(event) =>
-                            updateSelectedView((view) => ({
-                              ...view,
-                              name: event.target.value
-                            }))
-                          }
+                          onChange={(event) => updateSelectedView((view) => ({ ...view, name: event.target.value }))}
                           disabled={!canEdit}
                         />
                       </label>
 
                       {selectedView.components.length === 0 ? (
-                        <p style={{ margin: 0 }}>Dépose un composant ici pour commencer.</p>
+                        <p style={{ margin: 0 }}>Depose un composant ici pour commencer.</p>
                       ) : (
                         <div className="studio-components-grid">
                           {selectedView.components.map((component) => (
                             <article
                               key={component.id}
-                              className={`studio-component-card ${selectedComponentId === component.id ? 'is-selected' : ''} ${
-                                dragOverComponentId === component.id ? 'is-drag-over' : ''
-                              }`}
+                              className={`studio-component-card ${selectedComponentId === component.id ? 'is-selected' : ''} ${dragOverComponentId === component.id ? 'is-drag-over' : ''}`}
                               draggable={canEdit}
                               onDragStart={(event) => handleComponentDragStart(event, component.id)}
                               onDragOver={(event) => {
@@ -569,7 +586,8 @@ export default function SystemStudioPage() {
                             >
                               <strong>{component.label || '(sans label)'}</strong>
                               <span>Type: {component.type}</span>
-                              <span>Clé: {component.key}</span>
+                              <span>Cle: {component.key}</span>
+                              <div style={{ marginTop: '0.25rem' }}>{renderComponentPreview(component)}</div>
                             </article>
                           ))}
                         </div>
@@ -584,192 +602,131 @@ export default function SystemStudioPage() {
               <div className="studio-splitter" onMouseDown={(event) => startResizing('right', event)} title="Redimensionner" />
 
               <aside className="studio-panel">
-                <h2 style={{ marginTop: 0 }}>Propriétés</h2>
+                <h2 style={{ marginTop: 0 }}>Proprietes</h2>
                 {selectedComponent ? (
                   <div className="studio-properties">
-                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
-                      Type: <strong>{selectedComponent.type}</strong>
-                    </p>
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>Type: <strong>{selectedComponent.type}</strong></p>
                     <label>
                       <span>Label</span>
-                      <input
-                        type="text"
-                        value={selectedComponent.label}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({
-                            ...item,
-                            label: event.target.value
-                          }))
-                        }
-                        disabled={!canEdit}
-                      />
+                      <input type="text" value={selectedComponent.label} onChange={(event) => updateSelectedComponent((item) => ({ ...item, label: event.target.value }))} disabled={!canEdit} />
                     </label>
                     <label>
-                      <span>Clé technique</span>
-                      <input
-                        type="text"
-                        value={selectedComponent.key}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({
-                            ...item,
-                            key: event.target.value
-                          }))
-                        }
-                        disabled={!canEdit}
-                      />
+                      <span>Cle technique</span>
+                      <input type="text" value={selectedComponent.key} onChange={(event) => updateSelectedComponent((item) => ({ ...item, key: event.target.value }))} disabled={!canEdit} />
                     </label>
                     <label>
                       <span>Placeholder</span>
-                      <input
-                        type="text"
-                        value={selectedComponent.placeholder ?? ''}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({
-                            ...item,
-                            placeholder: event.target.value
-                          }))
-                        }
-                        disabled={!canEdit}
-                      />
+                      <input type="text" value={selectedComponent.placeholder ?? ''} onChange={(event) => updateSelectedComponent((item) => ({ ...item, placeholder: event.target.value }))} disabled={!canEdit} />
                     </label>
                     <label>
-                      <span>Référence (@champ)</span>
-                      <input
-                        type="text"
-                        value={selectedComponent.reference ?? ''}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({
-                            ...item,
-                            reference: event.target.value
-                          }))
-                        }
-                        disabled={!canEdit}
-                        placeholder="@force"
-                      />
+                      <span>Reference (@champ)</span>
+                      <input type="text" value={selectedComponent.reference ?? ''} onChange={(event) => updateSelectedComponent((item) => ({ ...item, reference: event.target.value }))} disabled={!canEdit} placeholder="@force" />
                     </label>
                     <label>
                       <span>Formule</span>
-                      <input
-                        type="text"
-                        value={selectedComponent.formula ?? ''}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({
-                            ...item,
-                            formula: event.target.value
-                          }))
-                        }
-                        disabled={!canEdit}
-                        placeholder="@force + @agilite"
-                      />
+                      <input type="text" value={selectedComponent.formula ?? ''} onChange={(event) => updateSelectedComponent((item) => ({ ...item, formula: event.target.value }))} disabled={!canEdit} placeholder="@force + @agilite" />
                     </label>
 
-                    {(selectedComponent.type === 'choice' || selectedComponent.type === 'tabs' || selectedComponent.type === 'repeater') ? (
+                    {(selectedComponent.type === 'choice' || selectedComponent.type === 'tabs' || selectedComponent.type === 'repeater' || selectedComponent.type === 'tabs_nested') ? (
                       <label>
                         <span>Options (une par ligne)</span>
                         <textarea
                           rows={4}
                           value={(selectedComponent.options ?? []).join('\n')}
-                          onChange={(event) =>
-                            updateSelectedComponent((item) => ({
-                              ...item,
-                              options: event.target.value
-                                .split('\n')
-                                .map((line) => line.trim())
-                                .filter(Boolean)
-                            }))
-                          }
+                          onChange={(event) => updateSelectedComponent((item) => ({ ...item, options: event.target.value.split('\n').map((line) => line.trim()).filter(Boolean) }))}
                           disabled={!canEdit}
                         />
                       </label>
+                    ) : null}
+
+                    {(selectedComponent.type === 'table' || selectedComponent.type === 'inventory') ? (
+                      <label>
+                        <span>Colonnes (une par ligne)</span>
+                        <textarea
+                          rows={4}
+                          value={(selectedComponent.columns ?? []).join('\n')}
+                          onChange={(event) => updateSelectedComponent((item) => ({ ...item, columns: event.target.value.split('\n').map((line) => line.trim()).filter(Boolean) }))}
+                          disabled={!canEdit}
+                        />
+                      </label>
+                    ) : null}
+
+                    {selectedComponent.type === 'dice_roll' ? (
+                      <label>
+                        <span>Formule de des</span>
+                        <input
+                          type="text"
+                          value={selectedComponent.diceFormula ?? ''}
+                          onChange={(event) => updateSelectedComponent((item) => ({ ...item, diceFormula: event.target.value }))}
+                          disabled={!canEdit}
+                          placeholder="1d20+@mod"
+                        />
+                      </label>
+                    ) : null}
+
+                    {selectedComponent.type === 'relation' ? (
+                      <>
+                        <label>
+                          <span>Cible relationnelle</span>
+                          <input
+                            type="text"
+                            value={selectedComponent.relationTarget ?? ''}
+                            onChange={(event) => updateSelectedComponent((item) => ({ ...item, relationTarget: event.target.value }))}
+                            disabled={!canEdit}
+                            placeholder="character|item|npc"
+                          />
+                        </label>
+                        <label>
+                          <span>Liens multiples</span>
+                          <select
+                            value={String(Boolean(selectedComponent.allowMultiple))}
+                            onChange={(event) => updateSelectedComponent((item) => ({ ...item, allowMultiple: event.target.value === 'true' }))}
+                            disabled={!canEdit}
+                          >
+                            <option value="false">Non</option>
+                            <option value="true">Oui</option>
+                          </select>
+                        </label>
+                      </>
                     ) : null}
 
                     {(selectedComponent.type === 'number' || selectedComponent.type === 'range') ? (
                       <>
                         <label>
                           <span>Min</span>
-                          <input
-                            type="number"
-                            value={selectedComponent.min ?? 0}
-                            onChange={(event) =>
-                              updateSelectedComponent((item) => ({
-                                ...item,
-                                min: Number(event.target.value)
-                              }))
-                            }
-                            disabled={!canEdit}
-                          />
+                          <input type="number" value={selectedComponent.min ?? 0} onChange={(event) => updateSelectedComponent((item) => ({ ...item, min: Number(event.target.value) }))} disabled={!canEdit} />
                         </label>
                         <label>
                           <span>Max</span>
-                          <input
-                            type="number"
-                            value={selectedComponent.max ?? 100}
-                            onChange={(event) =>
-                              updateSelectedComponent((item) => ({
-                                ...item,
-                                max: Number(event.target.value)
-                              }))
-                            }
-                            disabled={!canEdit}
-                          />
+                          <input type="number" value={selectedComponent.max ?? 100} onChange={(event) => updateSelectedComponent((item) => ({ ...item, max: Number(event.target.value) }))} disabled={!canEdit} />
                         </label>
                         <label>
                           <span>Step</span>
-                          <input
-                            type="number"
-                            value={selectedComponent.step ?? 1}
-                            onChange={(event) =>
-                              updateSelectedComponent((item) => ({
-                                ...item,
-                                step: Number(event.target.value)
-                              }))
-                            }
-                            disabled={!canEdit}
-                          />
+                          <input type="number" value={selectedComponent.step ?? 1} onChange={(event) => updateSelectedComponent((item) => ({ ...item, step: Number(event.target.value) }))} disabled={!canEdit} />
                         </label>
                       </>
                     ) : null}
 
                     {selectedComponent.type === 'checkbox' ? (
                       <label>
-                        <span>Valeur par défaut</span>
-                        <select
-                          value={String(Boolean(selectedComponent.defaultValue))}
-                          onChange={(event) =>
-                            updateSelectedComponent((item) => ({
-                              ...item,
-                              defaultValue: event.target.value === 'true'
-                            }))
-                          }
-                          disabled={!canEdit}
-                        >
+                        <span>Valeur par defaut</span>
+                        <select value={String(Boolean(selectedComponent.defaultValue))} onChange={(event) => updateSelectedComponent((item) => ({ ...item, defaultValue: event.target.value === 'true' }))} disabled={!canEdit}>
                           <option value="false">False</option>
                           <option value="true">True</option>
                         </select>
                       </label>
                     ) : null}
 
-                    {(selectedComponent.type !== 'checkbox') ? (
+                    {selectedComponent.type !== 'checkbox' ? (
                       <label>
-                        <span>Valeur par défaut</span>
+                        <span>Valeur par defaut</span>
                         <input
                           type={selectedComponent.type === 'number' || selectedComponent.type === 'range' ? 'number' : 'text'}
-                          value={
-                            typeof selectedComponent.defaultValue === 'number'
-                              ? selectedComponent.defaultValue
-                              : typeof selectedComponent.defaultValue === 'string'
-                              ? selectedComponent.defaultValue
-                              : ''
-                          }
-                          onChange={(event) =>
-                            updateSelectedComponent((item) => ({
-                              ...item,
-                              defaultValue:
-                                selectedComponent.type === 'number' || selectedComponent.type === 'range'
-                                  ? Number(event.target.value)
-                                  : event.target.value
-                            }))
-                          }
+                          value={typeof selectedComponent.defaultValue === 'number' ? selectedComponent.defaultValue : typeof selectedComponent.defaultValue === 'string' ? selectedComponent.defaultValue : ''}
+                          onChange={(event) => updateSelectedComponent((item) => ({
+                            ...item,
+                            defaultValue: selectedComponent.type === 'number' || selectedComponent.type === 'range' ? Number(event.target.value) : event.target.value
+                          }))}
                           disabled={!canEdit}
                         />
                       </label>
@@ -777,16 +734,7 @@ export default function SystemStudioPage() {
 
                     <label>
                       <span>Obligatoire</span>
-                      <select
-                        value={String(Boolean(selectedComponent.required))}
-                        onChange={(event) =>
-                          updateSelectedComponent((item) => ({
-                            ...item,
-                            required: event.target.value === 'true'
-                          }))
-                        }
-                        disabled={!canEdit}
-                      >
+                      <select value={String(Boolean(selectedComponent.required))} onChange={(event) => updateSelectedComponent((item) => ({ ...item, required: event.target.value === 'true' }))} disabled={!canEdit}>
                         <option value="false">Non</option>
                         <option value="true">Oui</option>
                       </select>
@@ -797,11 +745,11 @@ export default function SystemStudioPage() {
                     </Button>
 
                     <p style={{ marginBottom: 0, fontSize: '0.85rem' }}>
-                      Astuce: utilise <code>@nomChamp</code> dans références/formules pour relier les champs.
+                      Astuce: utilise <code>@nomChamp</code> dans references/formules pour lier les champs.
                     </p>
                   </div>
                 ) : (
-                  <p style={{ margin: 0 }}>Sélectionne un composant dans la vue centrale.</p>
+                  <p style={{ margin: 0 }}>Selectionne un composant dans la vue centrale.</p>
                 )}
               </aside>
             </section>
