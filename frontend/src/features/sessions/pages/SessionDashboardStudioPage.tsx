@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import Layout from '../../../components/Layout';
 import { sessionRepository } from '../../../data/repositories';
@@ -80,7 +80,7 @@ export default function SessionDashboardStudioPage() {
   const requestedRole = searchParams.get('role');
   const role: 'gm' | 'player' = requestedRole === 'player' ? 'player' : gmAllowed ? 'gm' : 'player';
 
-  const roleWidgets = useMemo(() => (role === 'gm' ? gmWidgets : playerWidgets), [role]);
+  const roleWidgets = role === 'gm' ? gmWidgets : playerWidgets;
 
   return (
     <Layout wide>
