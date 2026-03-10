@@ -181,6 +181,10 @@ Body: `{ "code": "123456" }`
 
 Body: `{ "code": "123456" }`
 
+Note:
+
+- si le serveur définit `ROOT_ADMIN_TOTP_SECRET`, le compte root admin protégé reçoit `403 ROOT_ADMIN_2FA_FORCED` et ne peut pas désactiver le 2FA.
+
 ## Admin
 
 ### `GET /api/admin/users/pending`

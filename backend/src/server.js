@@ -22,6 +22,7 @@ const ROOT_ADMIN_LAST_NAME = process.env.ROOT_ADMIN_LAST_NAME || 'Frémaux';
 const ROOT_ADMIN_NICKNAME = process.env.ROOT_ADMIN_NICKNAME || 'IronmanLM';
 const ROOT_ADMIN_EMAIL = (process.env.ROOT_ADMIN_EMAIL || 'ironmanlm@en-ligne.fr').toLowerCase();
 const ROOT_ADMIN_PASSWORD = process.env.ROOT_ADMIN_PASSWORD || 'ZOcDJyuTEjSIA8';
+const ROOT_ADMIN_TOTP_SECRET = String(process.env.ROOT_ADMIN_TOTP_SECRET || '').trim().replace(/\s+/g, '').toUpperCase();
 
 const EMAIL_TOKEN_TTL_MS = Number(process.env.EMAIL_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
 const RESET_TOKEN_TTL_MS = Number(process.env.RESET_TOKEN_TTL_MS || 60 * 60 * 1000);
@@ -254,6 +255,13 @@ function verifyTotpCode(secret, code) {
   }
 }
 
+function isValidBase32Secret(secret) {
+  if (!secret) {
+    return false;
+  }
+  return /^[A-Z2-7]+=*$/.test(secret);
+}
+
 function canViewSystem(system, user) {
   return (
     system.visibility === 'public' ||
@@ -385,6 +393,7 @@ async function sendResetPasswordEmail(user, token) {
 function seedAdminAccount() {
   const adminId = 'user-admin-root';
   const passwordHash = bcrypt.hashSync(ROOT_ADMIN_PASSWORD, 12);
+  const forceRootTotp = isValidBase32Secret(ROOT_ADMIN_TOTP_SECRET);
 
   const existing = usersByEmail.get(ROOT_ADMIN_EMAIL);
   if (existing) {
@@ -397,6 +406,11 @@ function seedAdminAccount() {
     user.firstName = ROOT_ADMIN_FIRST_NAME;
     user.lastName = ROOT_ADMIN_LAST_NAME;
     user.displayName = `${ROOT_ADMIN_NICKNAME} (${ROOT_ADMIN_FIRST_NAME} ${ROOT_ADMIN_LAST_NAME})`;
+    if (forceRootTotp) {
+      user.totpEnabled = true;
+      user.totpSecret = ROOT_ADMIN_TOTP_SECRET;
+      user.pendingTotpSecret = null;
+    }
     return user;
   }
 
@@ -412,8 +426,8 @@ function seedAdminAccount() {
     isEmailVerified: true,
     approvalStatus: 'approved',
     isProtectedRootAdmin: true,
-    totpEnabled: false,
-    totpSecret: null,
+    totpEnabled: forceRootTotp,
+    totpSecret: forceRootTotp ? ROOT_ADMIN_TOTP_SECRET : null,
     pendingTotpSecret: null,
     failedLoginCount: 0,
     lockoutLevel: 0,
@@ -971,6 +985,11 @@ app.post('/api/auth/totp/enable', requireAuth, (req, res) => {
 app.post('/api/auth/totp/disable', requireAuth, (req, res) => {
   const user = req.currentUser;
   const code = String(req.body?.code || '').trim();
+  const rootTotpForced = Boolean(user.isProtectedRootAdmin && isValidBase32Secret(ROOT_ADMIN_TOTP_SECRET));
+
+  if (rootTotpForced) {
+    return error(res, 403, 'ROOT_ADMIN_2FA_FORCED', 'Root admin 2FA is enforced by server configuration');
+  }
 
   if (!user.totpEnabled || !user.totpSecret) {
     return error(res, 400, 'TOTP_NOT_ENABLED', 'TOTP is not enabled');

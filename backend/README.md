@@ -23,6 +23,7 @@ npm start
 - `API_BASE_URL` (URL API publique)
 - `JWT_SECRET`, `JWT_REFRESH_SECRET`
 - `ROOT_ADMIN_*` (compte admin protégé)
+- `ROOT_ADMIN_TOTP_SECRET` (optionnel, force le 2FA TOTP du root admin)
 - `SMTP_*` (envoi des emails vérification/réinit)
 
 ## Auth & sécurité implémentés
@@ -36,6 +37,7 @@ npm start
 - Changement de mot de passe connecté
 - 2FA TOTP optionnel (fortement recommandé)
 - Compte `ROOT_ADMIN` protégé (non rétrogradable/supprimable)
+- Si `ROOT_ADMIN_TOTP_SECRET` est défini (BASE32), le 2FA du root admin est forcé et ne peut pas être désactivé via API.
 
 ## Endpoints principaux
 
