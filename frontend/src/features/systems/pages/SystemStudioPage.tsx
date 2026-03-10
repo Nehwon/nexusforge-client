@@ -26,6 +26,49 @@ const STUDIO_LEFT_WIDTH_KEY = 'nexusforge.studio.leftWidth';
 const STUDIO_RIGHT_WIDTH_KEY = 'nexusforge.studio.rightWidth';
 const STUDIO_FULLSCREEN_KEY = 'nexusforge.studio.fullscreen';
 
+const BUTTON_SCRIPT_TEMPLATES: Array<{ id: string; label: string; script: string }> = [
+  {
+    id: 'damage-basic',
+    label: 'Degats de base',
+    script: 'IF @hp > 0\nSET hp = @hp - 1\nENDIF'
+  },
+  {
+    id: 'heal-basic',
+    label: 'Soin de base',
+    script: 'SET hp = @hp + 1'
+  },
+  {
+    id: 'toggle-state',
+    label: 'Basculer etat',
+    script: 'TOGGLE etat_alerte'
+  },
+  {
+    id: 'roll-attack',
+    label: 'Jet d attaque',
+    script: 'ROLL 1d20+@attaque'
+  },
+  {
+    id: 'roll-skill',
+    label: 'Jet competence',
+    script: 'ROLL 1d20+@competence'
+  },
+  {
+    id: 'if-then-else',
+    label: 'Condition IF/ELSE',
+    script: "IF @hp <= 0\nSET etat_ko = 1\nELSE\nSET etat_ko = 0\nENDIF"
+  },
+  {
+    id: 'resource-pack',
+    label: 'Consommer ressource',
+    script: 'IF @mana >= 2\nADD mana -2\nROLL 1d8+@magie\nENDIF'
+  },
+  {
+    id: 'inventory-count',
+    label: 'Compteur inventaire',
+    script: 'ADD charges -1\nIF @charges <= 0\nSET item_vide = 1\nENDIF'
+  }
+];
+
 const PALETTE_TREE: Array<{ id: string; label: string; items: PaletteItem[] }> = [
   {
     id: 'basic-inputs',
@@ -444,6 +487,7 @@ export default function SystemStudioPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [selectedButtonTemplateId, setSelectedButtonTemplateId] = useState('');
   const lastSavedSchemaRef = useRef<string>('');
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
@@ -536,6 +580,10 @@ export default function SystemStudioPage() {
     setRuntimeValidationErrors({});
     setRuntimeMessage(null);
   }, [selectedViewId, selectedView?.components]);
+
+  useEffect(() => {
+    setSelectedButtonTemplateId('');
+  }, [selectedComponentId]);
 
   const updateSchema = (update: (current: StudioSchema) => StudioSchema) => {
     setSchema((current) => {
@@ -815,6 +863,22 @@ export default function SystemStudioPage() {
     const computed = applyDerivedFormulas(selectedView?.components ?? [], nextValues);
     setRuntimeValues(computed);
     setRuntimeMessage(logs.length > 0 ? logs.join(' | ') : 'Script execute.');
+  };
+
+  const applySelectedButtonTemplate = () => {
+    if (!selectedComponent || selectedComponent.type !== 'button' || !selectedButtonTemplateId) {
+      return;
+    }
+    const template = BUTTON_SCRIPT_TEMPLATES.find((item) => item.id === selectedButtonTemplateId);
+    if (!template) {
+      return;
+    }
+    updateSelectedComponent((item) => ({
+      ...item,
+      actionScript: template.script
+    }));
+    setSelectedButtonTemplateId('');
+    setStatusMessage(`Template applique: ${template.label}`);
   };
 
   return (
@@ -1174,18 +1238,49 @@ export default function SystemStudioPage() {
                       />
                     </label>
                     {selectedComponent.type === 'button' ? (
-                      <label>
-                        <span>Script bouton (multiligne)</span>
-                        <textarea
-                          rows={5}
-                          value={selectedComponent.actionScript ?? ''}
-                          onChange={(event) =>
-                            updateSelectedComponent((item) => ({ ...item, actionScript: event.target.value }))
-                          }
-                          disabled={!canEdit}
-                          placeholder={'IF @hp > 0\\nSET hp = @hp - 1\\nELSE\\nTOGGLE ko\\nENDIF'}
-                        />
-                      </label>
+                      <>
+                        <label>
+                          <span>Template de script</span>
+                          <select
+                            value={selectedButtonTemplateId}
+                            onChange={(event) => setSelectedButtonTemplateId(event.target.value)}
+                            disabled={!canEdit}
+                          >
+                            <option value="">Choisir un template</option>
+                            {BUTTON_SCRIPT_TEMPLATES.map((template) => (
+                              <option key={template.id} value={template.id}>
+                                {template.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={applySelectedButtonTemplate}
+                            disabled={!canEdit || !selectedButtonTemplateId}
+                          >
+                            Appliquer template
+                          </Button>
+                        </div>
+                        <label>
+                          <span>Script bouton (multiligne)</span>
+                          <textarea
+                            rows={7}
+                            value={selectedComponent.actionScript ?? ''}
+                            onChange={(event) =>
+                              updateSelectedComponent((item) => ({ ...item, actionScript: event.target.value }))
+                            }
+                            disabled={!canEdit}
+                            placeholder={'IF @hp > 0\\nSET hp = @hp - 1\\nELSE\\nTOGGLE ko\\nENDIF'}
+                          />
+                        </label>
+                        <small>
+                          Commandes: <code>IF</code>, <code>ELSE</code>, <code>ENDIF</code>, <code>SET</code>,{' '}
+                          <code>ADD</code>, <code>TOGGLE</code>, <code>ROLL</code>.
+                        </small>
+                      </>
                     ) : null}
 
                     {selectedComponent.type === 'choice' ||
