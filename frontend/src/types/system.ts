@@ -50,17 +50,43 @@ export interface RulesPresentation {
   groups: RulesPresentationGroup[];
 }
 
+export type StudioComponentType = 'text' | 'number' | 'checkbox' | 'button';
+
+export interface StudioComponentDefinition {
+  id: string;
+  type: StudioComponentType;
+  label: string;
+  key: string;
+  defaultValue?: string | number | boolean;
+  reference?: string;
+  formula?: string;
+}
+
+export interface StudioViewDefinition {
+  id: string;
+  name: string;
+  components: StudioComponentDefinition[];
+}
+
+export interface StudioSchema {
+  views: StudioViewDefinition[];
+}
+
 export interface GameSystem {
   id: string;
   name: string;
+  description?: string;
   version: string;
   author?: string;
   ownerUserId: string;
   visibility: GameSystemVisibility;
+  forkedFromSystemId?: string;
+  forkedFromSystemName?: string;
   tags?: string[];
   rollDefinitions?: SystemRollDefinition[];
   rulesProgram?: RulesProgramBlock[];
   rulesPresentation?: RulesPresentation;
+  studioSchema?: StudioSchema;
   referenceSheets?: CharacterSheetView[];
   createdAt: string;
   updatedAt: string;
