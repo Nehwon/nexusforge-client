@@ -1048,6 +1048,26 @@ body.theme-dark .system-builder__toolbar {
   gap: 0.75rem;
 }
 
+.studio-inline-nav {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.studio-inline-nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid #d0d5dd;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 0.22rem 0.55rem;
+}
+
 .studio-center-tabs {
   display: flex;
   gap: 0.5rem;
@@ -1390,6 +1410,12 @@ body.theme-dark .studio-quick-nav a {
 body.theme-dark .studio-tree details {
   border-color: #334155;
   background: #0f172a;
+}
+
+body.theme-dark .studio-inline-nav a {
+  border-color: #334155;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 body.theme-dark .studio-type-help {

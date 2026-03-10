@@ -2270,6 +2270,11 @@ export default function SystemStudioPage() {
                 }}
                 onDrop={handleCanvasDrop}
               >
+                <nav className="studio-inline-nav" aria-label="Navigation studio interne">
+                  <Link to="/">Accueil</Link>
+                  <Link to="/sessions">Parties</Link>
+                  <Link to="/systems">Atelier</Link>
+                </nav>
                 <h2 style={{ marginTop: 0 }}>Vue / fiche (zone centrale)</h2>
                 <div className="studio-views">
                   <label style={{ display: 'grid', gap: '0.35rem' }}>
