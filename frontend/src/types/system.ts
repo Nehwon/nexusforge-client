@@ -88,10 +88,14 @@ export interface StudioComponentDefinition {
   max?: number;
   step?: number;
   required?: boolean;
+  showIf?: string;
+  validationPattern?: string;
+  validationMessage?: string;
   columns?: string[];
   diceFormula?: string;
   relationTarget?: string;
   allowMultiple?: boolean;
+  actionScript?: string;
   reference?: string;
   formula?: string;
 }

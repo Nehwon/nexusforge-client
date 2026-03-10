@@ -127,6 +127,63 @@ function evalFormula(formula: string, values: StudioRuntimeValues): number | nul
   }
 }
 
+function evalCondition(condition: string, values: StudioRuntimeValues): boolean {
+  const withValues = condition.replace(/@([A-Za-z0-9_]+)/g, (_, key: string) => {
+    const value = values[key];
+    if (typeof value === 'string') {
+      return JSON.stringify(value);
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      return String(value.length);
+    }
+    return '0';
+  });
+  if (!/^[A-Za-z0-9_+\-*/%<>=!&|().\s'",]+$/.test(withValues)) {
+    return false;
+  }
+  try {
+    return Boolean(new Function(`return (${withValues});`)());
+  } catch {
+    return false;
+  }
+}
+
+function validateStudioValue(
+  component: NonNullable<GameSystem['studioSchema']>['views'][number]['components'][number],
+  value: string | number | boolean | string[]
+): string | null {
+  if (component.required) {
+    if (value === '' || value === null || value === undefined) {
+      return component.validationMessage || 'Champ obligatoire.';
+    }
+    if (Array.isArray(value) && value.length === 0) {
+      return component.validationMessage || 'Champ obligatoire.';
+    }
+  }
+  if ((component.type === 'number' || component.type === 'range') && typeof value === 'number') {
+    if (typeof component.min === 'number' && value < component.min) {
+      return component.validationMessage || `Minimum: ${component.min}`;
+    }
+    if (typeof component.max === 'number' && value > component.max) {
+      return component.validationMessage || `Maximum: ${component.max}`;
+    }
+  }
+  if (component.validationPattern && typeof value === 'string') {
+    try {
+      const re = new RegExp(component.validationPattern);
+      if (!re.test(value)) {
+        return component.validationMessage || 'Format invalide.';
+      }
+    } catch {
+      return 'Regex invalide.';
+    }
+  }
+  return null;
+}
+
 function applyStudioFormulas(
   components: NonNullable<GameSystem['studioSchema']>['views'][number]['components'],
   values: StudioRuntimeValues
@@ -175,6 +232,74 @@ function rollStudioDice(formula: string, values: StudioRuntimeValues): { total: 
     total,
     detail: `${rolls.join(' + ')}${modifier ? ` ${modifier > 0 ? '+' : '-'} ${Math.abs(modifier)}` : ''}`
   };
+}
+
+function executeStudioScript(
+  script: string,
+  values: StudioRuntimeValues
+): { nextValues: StudioRuntimeValues; logs: string[] } {
+  const lines = script
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const stack: boolean[] = [];
+  let nextValues = { ...values };
+  const logs: string[] = [];
+
+  for (const line of lines) {
+    const upper = line.toUpperCase();
+    if (upper.startsWith('IF ')) {
+      stack.push(evalCondition(line.slice(3).trim(), nextValues));
+      continue;
+    }
+    if (upper === 'ELSE') {
+      if (stack.length > 0) {
+        stack[stack.length - 1] = !stack[stack.length - 1];
+      }
+      continue;
+    }
+    if (upper === 'ENDIF') {
+      stack.pop();
+      continue;
+    }
+    if (stack.includes(false)) {
+      continue;
+    }
+
+    const addMatch = line.match(/^ADD\s+([A-Za-z0-9_]+)\s+(-?\d+(?:\.\d+)?)$/i);
+    if (addMatch) {
+      const [, target, deltaRaw] = addMatch;
+      const delta = Number(deltaRaw);
+      nextValues[target] = toNumeric(nextValues[target]) + delta;
+      logs.push(`add ${target} ${delta > 0 ? '+' : ''}${delta}`);
+      continue;
+    }
+    const setMatch = line.match(/^(?:SET\s+)?([A-Za-z0-9_]+)\s*=\s*(.+)$/i);
+    if (setMatch) {
+      const [, target, expr] = setMatch;
+      const result = evalFormula(expr, nextValues);
+      if (result !== null) {
+        nextValues[target] = result;
+        logs.push(`set ${target}=${result}`);
+      }
+      continue;
+    }
+    const toggleMatch = line.match(/^TOGGLE\s+([A-Za-z0-9_]+)$/i);
+    if (toggleMatch) {
+      const [, target] = toggleMatch;
+      nextValues[target] = !Boolean(nextValues[target]);
+      logs.push(`toggle ${target}`);
+      continue;
+    }
+    const rollMatch = line.match(/^ROLL\s+(.+)$/i);
+    if (rollMatch) {
+      const roll = rollStudioDice(rollMatch[1], nextValues);
+      if (roll) {
+        logs.push(`roll ${rollMatch[1]}=${roll.total} (${roll.detail})`);
+      }
+    }
+  }
+  return { nextValues, logs };
 }
 
 function studioRuntimeStorageKey(sessionId: string, viewId: string): string {
@@ -261,6 +386,7 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
   const [selectedStudioViewId, setSelectedStudioViewId] = useState<string>('');
   const [studioRuntimeValues, setStudioRuntimeValues] = useState<StudioRuntimeValues>({});
   const [lastStudioRollResult, setLastStudioRollResult] = useState<string | null>(null);
+  const [studioValidationErrors, setStudioValidationErrors] = useState<Record<string, string>>({});
   const persistRuntimeTimeoutRef = useRef<number | null>(null);
   const lastPersistedRuntimeRef = useRef<string>('');
 
@@ -346,6 +472,7 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
     if (!currentSystem?.studioSchema?.views?.length) {
       setSelectedStudioViewId('');
       setStudioRuntimeValues({});
+      setStudioValidationErrors({});
       return;
     }
     setSelectedStudioViewId((current) => current || currentSystem.studioSchema?.views?.[0]?.id || '');
@@ -368,6 +495,7 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
     };
     const computed = applyStudioFormulas(selectedStudioView.components, merged);
     setStudioRuntimeValues(computed);
+    setStudioValidationErrors({});
     lastPersistedRuntimeRef.current = JSON.stringify(computed);
     setLastStudioRollResult(null);
   }, [currentSession.id, selectedCharacter?.id, selectedCharacter?.attributes, selectedStudioView?.id, selectedStudioView?.components]);
@@ -502,6 +630,16 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
     if (!selectedStudioView) {
       return;
     }
+    const validation = validateStudioValue(component, value);
+    setStudioValidationErrors((previous) => {
+      const nextErrors = { ...previous };
+      if (validation) {
+        nextErrors[component.key] = validation;
+      } else {
+        delete nextErrors[component.key];
+      }
+      return nextErrors;
+    });
     const next = applyStudioFormulas(selectedStudioView.components, {
       ...studioRuntimeValues,
       [component.key]: value
@@ -516,17 +654,17 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
       return;
     }
 
-    const script = component.formula?.trim() || '';
+    const script = component.actionScript?.trim() || component.formula?.trim() || '';
     if (!script) {
       setLastStudioRollResult('Aucun script/formule sur ce bouton.');
       return;
     }
 
-    const { nextValues, messages } = executeButtonScript(script, studioRuntimeValues);
+    const { nextValues, logs } = executeStudioScript(script, studioRuntimeValues);
     const computed = applyStudioFormulas(selectedStudioView.components, nextValues);
     setStudioRuntimeValues(computed);
 
-    const message = messages.length > 0 ? messages.join(' | ') : `script execute: ${script}`;
+    const message = logs.length > 0 ? logs.join(' | ') : `script execute: ${script}`;
     setLastStudioRollResult(`${component.label}: ${message}`);
 
     sendSystemMessage({
@@ -690,7 +828,14 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
               {lastStudioRollResult ? <p style={{ marginBottom: 0 }}>{lastStudioRollResult}</p> : null}
 
               <div className="studio-runtime-grid" style={{ marginTop: '0.65rem' }}>
-                {selectedStudioView.components.map((component) => {
+                {selectedStudioView.components
+                  .filter((component) => {
+                    if (!component.showIf?.trim()) {
+                      return true;
+                    }
+                    return evalCondition(component.showIf, studioRuntimeValues);
+                  })
+                  .map((component) => {
                   const value = studioRuntimeValues[component.key];
                   return (
                     <article key={`studio-runtime-${component.id}`} className="studio-runtime-item">
@@ -776,6 +921,10 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
                         </select>
                       ) : null}
                       {component.formula ? <small>formule: {component.formula}</small> : null}
+                      {component.showIf ? <small>showIf: {component.showIf}</small> : null}
+                      {studioValidationErrors[component.key] ? (
+                        <small style={{ color: '#b42318' }}>{studioValidationErrors[component.key]}</small>
+                      ) : null}
                     </article>
                   );
                 })}

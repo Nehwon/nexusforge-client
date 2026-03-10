@@ -115,10 +115,14 @@ function createComponentFromPalette(item: PaletteItem): StudioComponentDefinitio
     max: item.type === 'range' ? 100 : undefined,
     step: item.type === 'range' ? 1 : undefined,
     required: false,
+    showIf: '',
+    validationPattern: '',
+    validationMessage: '',
     columns: item.type === 'table' || item.type === 'inventory' ? item.options ?? ['Nom', 'Valeur'] : undefined,
     diceFormula: item.type === 'dice_roll' ? String(item.defaultValue ?? '1d20') : undefined,
     relationTarget: item.type === 'relation' ? '' : undefined,
     allowMultiple: item.type === 'relation' ? false : undefined,
+    actionScript: item.type === 'button' ? '' : undefined,
     reference: '',
     formula: ''
   };
@@ -225,6 +229,136 @@ function rollDice(formula: string, values: RuntimeValues): { total: number; deta
   return { total, detail };
 }
 
+function evaluateCondition(condition: string, values: RuntimeValues): boolean {
+  const withValues = condition.replace(/@([A-Za-z0-9_]+)/g, (_, key: string) => {
+    const value = values[key];
+    if (typeof value === 'string') {
+      return JSON.stringify(value);
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    if (Array.isArray(value)) {
+      return String(value.length);
+    }
+    return '0';
+  });
+
+  if (!/^[A-Za-z0-9_+\-*/%<>=!&|().\s'",]+$/.test(withValues)) {
+    return false;
+  }
+
+  try {
+    return Boolean(new Function(`return (${withValues});`)());
+  } catch {
+    return false;
+  }
+}
+
+function validateRuntimeValue(component: StudioComponentDefinition, value: RuntimeValue): string | null {
+  if (component.required) {
+    if (value === '' || value === null || value === undefined) {
+      return component.validationMessage || 'Champ obligatoire.';
+    }
+    if (Array.isArray(value) && value.length === 0) {
+      return component.validationMessage || 'Champ obligatoire.';
+    }
+  }
+
+  if ((component.type === 'number' || component.type === 'range') && typeof value === 'number') {
+    if (typeof component.min === 'number' && value < component.min) {
+      return component.validationMessage || `Minimum: ${component.min}`;
+    }
+    if (typeof component.max === 'number' && value > component.max) {
+      return component.validationMessage || `Maximum: ${component.max}`;
+    }
+  }
+
+  if (component.validationPattern && typeof value === 'string') {
+    try {
+      const re = new RegExp(component.validationPattern);
+      if (!re.test(value)) {
+        return component.validationMessage || 'Format invalide.';
+      }
+    } catch {
+      return 'Regex de validation invalide.';
+    }
+  }
+
+  return null;
+}
+
+function executeRuntimeScript(script: string, values: RuntimeValues): { nextValues: RuntimeValues; logs: string[] } {
+  const lines = script
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const stack: boolean[] = [];
+  let nextValues = { ...values };
+  const logs: string[] = [];
+
+  for (const line of lines) {
+    const upper = line.toUpperCase();
+    if (upper.startsWith('IF ')) {
+      stack.push(evaluateCondition(line.slice(3).trim(), nextValues));
+      continue;
+    }
+    if (upper === 'ELSE') {
+      if (stack.length > 0) {
+        stack[stack.length - 1] = !stack[stack.length - 1];
+      }
+      continue;
+    }
+    if (upper === 'ENDIF') {
+      stack.pop();
+      continue;
+    }
+    if (stack.includes(false)) {
+      continue;
+    }
+
+    const addMatch = line.match(/^ADD\s+([A-Za-z0-9_]+)\s+(-?\d+(?:\.\d+)?)$/i);
+    if (addMatch) {
+      const [, target, deltaRaw] = addMatch;
+      const delta = Number(deltaRaw);
+      nextValues[target] = toNumber(nextValues[target]) + delta;
+      logs.push(`add ${target} ${delta > 0 ? '+' : ''}${delta}`);
+      continue;
+    }
+
+    const setMatch = line.match(/^(?:SET\s+)?([A-Za-z0-9_]+)\s*=\s*(.+)$/i);
+    if (setMatch) {
+      const [, target, expression] = setMatch;
+      const computed = evaluateMathExpression(expression, nextValues);
+      if (computed !== null) {
+        nextValues[target] = computed;
+        logs.push(`set ${target}=${computed}`);
+      }
+      continue;
+    }
+
+    const toggleMatch = line.match(/^TOGGLE\s+([A-Za-z0-9_]+)$/i);
+    if (toggleMatch) {
+      const [, target] = toggleMatch;
+      nextValues[target] = !Boolean(nextValues[target]);
+      logs.push(`toggle ${target}`);
+      continue;
+    }
+
+    const rollMatch = line.match(/^ROLL\s+(.+)$/i);
+    if (rollMatch) {
+      const [, expression] = rollMatch;
+      const roll = rollDice(expression, nextValues);
+      if (roll) {
+        logs.push(`roll ${expression}=${roll.total} (${roll.detail})`);
+      }
+    }
+  }
+
+  return { nextValues, logs };
+}
+
 function renderComponentPreview(component: StudioComponentDefinition): JSX.Element {
   if (component.type === 'checkbox') {
     return (
@@ -300,6 +434,7 @@ export default function SystemStudioPage() {
   const [dragOverComponentId, setDragOverComponentId] = useState<string | null>(null);
   const [runtimeValues, setRuntimeValues] = useState<RuntimeValues>({});
   const [runtimeMessage, setRuntimeMessage] = useState<string | null>(null);
+  const [runtimeValidationErrors, setRuntimeValidationErrors] = useState<Record<string, string>>({});
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -398,6 +533,7 @@ export default function SystemStudioPage() {
     const initial = buildInitialRuntimeValues(selectedView);
     const withDerived = selectedView ? applyDerivedFormulas(selectedView.components, initial) : initial;
     setRuntimeValues(withDerived);
+    setRuntimeValidationErrors({});
     setRuntimeMessage(null);
   }, [selectedViewId, selectedView?.components]);
 
@@ -436,6 +572,16 @@ export default function SystemStudioPage() {
     if (!selectedView) {
       return;
     }
+    const validationMessage = validateRuntimeValue(component, value);
+    setRuntimeValidationErrors((previous) => {
+      const next = { ...previous };
+      if (validationMessage) {
+        next[component.key] = validationMessage;
+      } else {
+        delete next[component.key];
+      }
+      return next;
+    });
     const next = applyDerivedFormulas(selectedView.components, {
       ...runtimeValues,
       [component.key]: value
@@ -651,6 +797,25 @@ export default function SystemStudioPage() {
       : undefined;
 
   const relationTargets = selectedView?.components.map((component) => component.key) ?? [];
+  const visibleRuntimeComponents =
+    selectedView?.components.filter((component) => {
+      if (!component.showIf?.trim()) {
+        return true;
+      }
+      return evaluateCondition(component.showIf, runtimeValues);
+    }) ?? [];
+
+  const runButtonScript = (component: StudioComponentDefinition) => {
+    const script = component.actionScript?.trim() || component.formula?.trim() || '';
+    if (!script) {
+      setRuntimeMessage('Aucun script defini pour ce bouton.');
+      return;
+    }
+    const { nextValues, logs } = executeRuntimeScript(script, runtimeValues);
+    const computed = applyDerivedFormulas(selectedView?.components ?? [], nextValues);
+    setRuntimeValues(computed);
+    setRuntimeMessage(logs.length > 0 ? logs.join(' | ') : 'Script execute.');
+  };
 
   return (
     <Layout wide>
@@ -807,7 +972,7 @@ export default function SystemStudioPage() {
                     <p style={{ margin: 0 }}>Ajoute des composants pour voir un rendu interactif.</p>
                   ) : (
                     <div className="studio-runtime-grid">
-                      {selectedView.components.map((component) => {
+                      {visibleRuntimeComponents.map((component) => {
                         const value = runtimeValues[component.key];
                         return (
                           <article key={`runtime-${component.id}`} className="studio-runtime-item">
@@ -847,7 +1012,11 @@ export default function SystemStudioPage() {
                                 ))}
                               </select>
                             ) : null}
-                            {component.type === 'button' ? <button className="button secondary">{String(component.defaultValue || component.label || 'Action')}</button> : null}
+                            {component.type === 'button' ? (
+                              <button className="button secondary" onClick={() => runButtonScript(component)}>
+                                {String(component.defaultValue || component.label || 'Action')}
+                              </button>
+                            ) : null}
                             {component.type === 'label' ? <p style={{ margin: 0 }}>{String(component.defaultValue || component.label || '')}</p> : null}
                             {component.type === 'dice_roll' ? (
                               <button
@@ -902,6 +1071,10 @@ export default function SystemStudioPage() {
                             ) : null}
                             {component.formula ? <small>formule: {component.formula}</small> : null}
                             {component.reference ? <small>ref: {component.reference}</small> : null}
+                            {component.showIf ? <small>showIf: {component.showIf}</small> : null}
+                            {runtimeValidationErrors[component.key] ? (
+                              <small style={{ color: '#b42318' }}>{runtimeValidationErrors[component.key]}</small>
+                            ) : null}
                           </article>
                         );
                       })}
@@ -966,6 +1139,54 @@ export default function SystemStudioPage() {
                         placeholder="@force + @agilite"
                       />
                     </label>
+                    <label>
+                      <span>Afficher si (showIf)</span>
+                      <input
+                        type="text"
+                        value={selectedComponent.showIf ?? ''}
+                        onChange={(event) => updateSelectedComponent((item) => ({ ...item, showIf: event.target.value }))}
+                        disabled={!canEdit}
+                        placeholder="@niveau >= 5 && @classe == 'mage'"
+                      />
+                    </label>
+                    <label>
+                      <span>Validation regex</span>
+                      <input
+                        type="text"
+                        value={selectedComponent.validationPattern ?? ''}
+                        onChange={(event) =>
+                          updateSelectedComponent((item) => ({ ...item, validationPattern: event.target.value }))
+                        }
+                        disabled={!canEdit}
+                        placeholder="^[A-Z]{2}[0-9]{3}$"
+                      />
+                    </label>
+                    <label>
+                      <span>Message validation</span>
+                      <input
+                        type="text"
+                        value={selectedComponent.validationMessage ?? ''}
+                        onChange={(event) =>
+                          updateSelectedComponent((item) => ({ ...item, validationMessage: event.target.value }))
+                        }
+                        disabled={!canEdit}
+                        placeholder="Format invalide"
+                      />
+                    </label>
+                    {selectedComponent.type === 'button' ? (
+                      <label>
+                        <span>Script bouton (multiligne)</span>
+                        <textarea
+                          rows={5}
+                          value={selectedComponent.actionScript ?? ''}
+                          onChange={(event) =>
+                            updateSelectedComponent((item) => ({ ...item, actionScript: event.target.value }))
+                          }
+                          disabled={!canEdit}
+                          placeholder={'IF @hp > 0\\nSET hp = @hp - 1\\nELSE\\nTOGGLE ko\\nENDIF'}
+                        />
+                      </label>
+                    ) : null}
 
                     {selectedComponent.type === 'choice' ||
                     selectedComponent.type === 'tabs' ||
