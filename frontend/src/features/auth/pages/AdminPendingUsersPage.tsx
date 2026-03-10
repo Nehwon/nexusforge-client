@@ -30,12 +30,18 @@ function parseIds(raw: string): string[] {
     .filter(Boolean);
 }
 
+function looksLikeTestSystem(system: GameSystem): boolean {
+  const haystack = `${system.name} ${system.description ?? ''} ${system.id}`.toLowerCase();
+  return ['test', 'demo', 'tmp', 'draft', 'copie', 'copy', 'nouveau'].some((token) => haystack.includes(token));
+}
+
 export default function AdminPendingUsersPage() {
   const { currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [usage, setUsage] = useState<AdminSystemUsage[]>([]);
   const [replacementBySystemId, setReplacementBySystemId] = useState<Record<string, string>>({});
   const [editableBySystemId, setEditableBySystemId] = useState<Record<string, EditableSystemAdminState>>({});
+  const [selectedSystemIds, setSelectedSystemIds] = useState<string[]>([]);
   const [systemSearch, setSystemSearch] = useState('');
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'public' | 'private'>('all');
   const [ownerFilter, setOwnerFilter] = useState('all');
@@ -51,6 +57,7 @@ export default function AdminPendingUsersPage() {
     const typed = systemsUsage as AdminSystemUsage[];
     setUsers(pendingUsers);
     setUsage(typed);
+    setSelectedSystemIds((previous) => previous.filter((id) => typed.some((item) => item.id === id)));
     setEditableBySystemId(
       typed.reduce<Record<string, EditableSystemAdminState>>((acc, system) => {
         acc[system.id] = {
@@ -196,6 +203,73 @@ export default function AdminPendingUsersPage() {
     }
   };
 
+  const toggleSystemSelection = (systemId: string) => {
+    setSelectedSystemIds((previous) => (previous.includes(systemId) ? previous.filter((id) => id !== systemId) : [...previous, systemId]));
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedSystemIds(filteredUsage.map((item) => item.id));
+  };
+
+  const selectLikelyTests = () => {
+    setSelectedSystemIds(filteredUsage.filter((item) => looksLikeTestSystem(item)).map((item) => item.id));
+  };
+
+  const clearSelection = () => {
+    setSelectedSystemIds([]);
+  };
+
+  const deleteSelectedSystems = async () => {
+    const unique = Array.from(new Set(selectedSystemIds));
+    if (unique.length === 0) {
+      setError('Aucun système sélectionné.');
+      return;
+    }
+    if (usage.length <= 1) {
+      setError('Impossible de supprimer: il faut au moins un système restant.');
+      return;
+    }
+
+    const replacementFallback = usage.find((item) => !unique.includes(item.id))?.id;
+    if (!replacementFallback) {
+      setError('Aucun système de remplacement valide.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Supprimer ${unique.length} système(s) sélectionné(s) ? Les parties seront migrées vers un système de remplacement.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setError(null);
+    setStatus(null);
+    setIsDeleting(true);
+    let migratedTotal = 0;
+    let deletedCount = 0;
+
+    try {
+      for (const systemId of unique) {
+        const replacementSystemId =
+          replacementBySystemId[systemId] || usage.find((candidate) => candidate.id !== systemId && !unique.includes(candidate.id))?.id || replacementFallback;
+        if (!replacementSystemId || replacementSystemId === systemId) {
+          continue;
+        }
+        const result = await systemRepository.deleteAsAdmin({ systemId, replacementSystemId });
+        migratedTotal += result.migratedSessionsCount;
+        deletedCount += 1;
+      }
+      await loadData();
+      setSelectedSystemIds([]);
+      setStatus(`Suppression en masse terminée: ${deletedCount} système(s), ${migratedTotal} partie(s) migrée(s).`);
+    } catch (bulkError) {
+      setError(bulkError instanceof Error ? bulkError.message : 'Suppression en masse impossible.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (!currentUser?.roles.includes('admin')) {
     return (
       <Layout>
@@ -238,6 +312,9 @@ export default function AdminPendingUsersPage() {
         <p style={{ marginTop: 0 }}>
           Modifier visibilité, lecteurs, co-éditeurs, consulter usage et supprimer avec migration.
         </p>
+        <p style={{ marginTop: 0, opacity: 0.85 }}>
+          Total: {usage.length} | Affichés: {filteredUsage.length} | Sélection: {selectedSystemIds.length}
+        </p>
 
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: '0.8rem' }}>
           <label style={{ display: 'grid', gap: '0.35rem' }}>
@@ -265,6 +342,30 @@ export default function AdminPendingUsersPage() {
           </label>
         </div>
 
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+          <Button type="button" variant="secondary" onClick={selectAllFiltered}>
+            Tout sélectionner (filtre)
+          </Button>
+          <Button type="button" variant="secondary" onClick={selectLikelyTests}>
+            Sélectionner systèmes test probables
+          </Button>
+          <Button type="button" variant="secondary" onClick={clearSelection}>
+            Vider sélection
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => void deleteSelectedSystems()} disabled={isDeleting || selectedSystemIds.length === 0}>
+            Supprimer sélection
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              void loadData();
+            }}
+          >
+            Rafraîchir
+          </Button>
+        </div>
+
         {!isLoading && filteredUsage.length === 0 ? <p>Aucun système.</p> : null}
         <div className="grid">
           {filteredUsage.map((item) => {
@@ -276,6 +377,14 @@ export default function AdminPendingUsersPage() {
 
             return (
               <article key={item.id} className="card">
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.45rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedSystemIds.includes(item.id)}
+                    onChange={() => toggleSystemSelection(item.id)}
+                  />
+                  <span>Sélectionner</span>
+                </label>
                 <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>{item.name}</h3>
                 <p style={{ marginTop: 0, marginBottom: '0.45rem' }}>{item.description || 'Aucune description'}</p>
                 <p style={{ margin: 0 }}>ID: {item.id}</p>
