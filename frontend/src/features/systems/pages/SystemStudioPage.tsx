@@ -961,6 +961,7 @@ export default function SystemStudioPage() {
   const [htmlImportDraft, setHtmlImportDraft] = useState('');
   const [isHtmlImportModalOpen, setIsHtmlImportModalOpen] = useState(false);
   const [activeCenterTab, setActiveCenterTab] = useState<StudioCenterTab>('canvas');
+  const [collapsedCanvasComponentIds, setCollapsedCanvasComponentIds] = useState<Record<string, boolean>>({});
   const lastSavedSchemaRef = useRef<string>('');
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
@@ -1941,10 +1942,18 @@ export default function SystemStudioPage() {
     }));
   };
 
+  const toggleCanvasComponentCollapse = (componentId: string) => {
+    setCollapsedCanvasComponentIds((previous) => ({
+      ...previous,
+      [componentId]: !previous[componentId]
+    }));
+  };
+
   const renderCanvasComponent = (component: StudioComponentDefinition, depth: number, ancestry: Set<string>): JSX.Element => {
     const family = getComponentFamily(component.type);
     const children = childrenByParent[component.id] ?? [];
     const isBlocked = ancestry.has(component.id);
+    const isCollapsed = Boolean(collapsedCanvasComponentIds[component.id]);
     const nextAncestry = new Set(ancestry);
     nextAncestry.add(component.id);
 
@@ -1972,7 +1981,21 @@ export default function SystemStudioPage() {
       >
         <div className="studio-component-card__head">
           <strong>{component.label || '(sans label)'}</strong>
-          <span className={`studio-component-badge family-${family}`}>{component.type}</span>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+            {children.length > 0 ? (
+              <button
+                type="button"
+                className="studio-inline-toggle"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleCanvasComponentCollapse(component.id);
+                }}
+              >
+                {isCollapsed ? 'Afficher' : 'Masquer'}
+              </button>
+            ) : null}
+            <span className={`studio-component-badge family-${family}`}>{component.type}</span>
+          </div>
         </div>
         <span>Cle: {component.key}</span>
         <div style={{ marginTop: '0.25rem' }}>{renderComponentPreview(component)}</div>
@@ -1986,7 +2009,7 @@ export default function SystemStudioPage() {
             : 'Bloc feuille'}
         </small>
 
-        {children.length > 0 && !isBlocked ? (
+        {children.length > 0 && !isBlocked && !isCollapsed ? (
           <div className="studio-component-children">
             {children.map((child) => renderCanvasComponent(child, depth + 1, nextAncestry))}
           </div>

@@ -1138,6 +1138,18 @@ body.theme-dark .system-builder__toolbar {
   border: 1px solid currentColor;
 }
 
+.studio-inline-toggle {
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+
 .studio-component-children {
   border-left: 2px dashed rgba(15, 23, 42, 0.25);
   padding-left: 0.55rem;
@@ -1369,6 +1381,12 @@ body.theme-dark .studio-quick-nav a {
 body.theme-dark .studio-tree details {
   border-color: #334155;
   background: #0f172a;
+}
+
+body.theme-dark .studio-inline-toggle {
+  border-color: #334155;
+  background: #0f172a;
+  color: #e2e8f0;
 }
 
 body.theme-dark .studio-canvas {

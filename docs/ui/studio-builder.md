@@ -20,6 +20,8 @@ Dans le studio systeme, un menu rapide est disponible en haut:
 
 Ce menu permet de naviguer rapidement entre les panneaux sur grands ecrans.
 
+Pour les vues volumineuses, chaque conteneur du canvas propose aussi un bouton `Masquer/Afficher` pour replier ou afficher ses enfants.
+
 ## Regles d'imbrication
 
 - `table` / `inventory` contient des `row`.
