@@ -45,6 +45,30 @@ Depuis le panneau Proprietes d'un bloc selectionne:
 - Le Studio regenere IDs + `key` pour eviter les conflits.
 - Si un bloc est selectionne et compatible, le bloc racine importe est accroche a ce bloc.
 
+## Convertisseur HTML vers Vue Studio
+
+Le Studio intègre un convertisseur qui permet:
+
+- d'uploader un fichier `.html`,
+- ou de coller un HTML brut,
+- puis de convertir en composants Studio ajoutés dans la vue courante.
+
+Mapping principal:
+
+- `input` -> `text|number|checkbox|range|date|time|color` selon `type`,
+- `textarea` -> `textarea`,
+- `select` -> `choice` (options importées),
+- `button` -> `button`,
+- `table` -> `table` (colonnes depuis `th`/première ligne),
+- conteneurs HTML (`div/section/form/fieldset/...`) -> `container`,
+- layouts type `row/grid/flex` -> `row` + `column`.
+
+Le convertisseur:
+
+- recrée les IDs et les `key` pour éviter les collisions,
+- tente de retrouver les labels via `label[for]`, `aria-label`, `placeholder`, `name`, `id`,
+- ajoute les blocs à la fin de la vue active.
+
 ## Studio d'ecran de partie
 
 Route dediee:

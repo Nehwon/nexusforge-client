@@ -298,6 +298,226 @@ function makeUniqueKey(baseKey: string, usedKeys: Set<string>): string {
   return candidate;
 }
 
+type HtmlImportResult = {
+  components: StudioComponentDefinition[];
+  warnings: string[];
+};
+
+function sanitizeKeySeed(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '')
+    .slice(0, 40);
+}
+
+function extractElementLabel(el: HTMLElement, labelsByFor: Map<string, string>): string {
+  const id = el.getAttribute('id') || '';
+  if (id && labelsByFor.has(id)) {
+    return labelsByFor.get(id) || '';
+  }
+  const aria = el.getAttribute('aria-label');
+  if (aria?.trim()) {
+    return aria.trim();
+  }
+  const placeholder = (el as HTMLInputElement).placeholder;
+  if (placeholder?.trim()) {
+    return placeholder.trim();
+  }
+  const name = el.getAttribute('name');
+  if (name?.trim()) {
+    return name.trim();
+  }
+  if (id.trim()) {
+    return id.trim();
+  }
+  return el.tagName.toLowerCase();
+}
+
+function convertHtmlToStudioComponents(html: string): HtmlImportResult {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+  const parserError = doc.querySelector('parsererror');
+  if (parserError) {
+    return {
+      components: [],
+      warnings: ['HTML invalide (parsererror).']
+    };
+  }
+
+  const labelsByFor = new Map<string, string>();
+  doc.querySelectorAll('label[for]').forEach((label) => {
+    const htmlFor = label.getAttribute('for');
+    if (!htmlFor) {
+      return;
+    }
+    const text = label.textContent?.trim() || '';
+    if (text) {
+      labelsByFor.set(htmlFor, text);
+    }
+  });
+
+  const components: StudioComponentDefinition[] = [];
+  const warnings: string[] = [];
+  const usedKeys = new Set<string>();
+
+  const createComponent = (
+    type: StudioComponentType,
+    label: string,
+    parentId: string | undefined,
+    keySeed?: string
+  ): StudioComponentDefinition => {
+    const key = makeUniqueKey(sanitizeKeySeed(keySeed || label || type) || `${type}_${Math.random().toString(36).slice(2, 5)}`, usedKeys);
+    const component: StudioComponentDefinition = {
+      id: makeId('cmp'),
+      type,
+      label: label || type,
+      key,
+      parentId,
+      defaultValue: type === 'checkbox' ? false : type === 'number' || type === 'range' ? 0 : '',
+      placeholder: '',
+      options: type === 'choice' ? ['Option A', 'Option B'] : undefined,
+      min: type === 'range' ? 0 : undefined,
+      max: type === 'range' ? 100 : undefined,
+      step: type === 'range' ? 1 : undefined,
+      required: false,
+      showIf: '',
+      validationPattern: '',
+      validationMessage: '',
+      columns: type === 'table' || type === 'inventory' ? ['Col A', 'Col B'] : undefined,
+      diceFormula: type === 'dice_roll' ? '1d20' : undefined,
+      relationTarget: type === 'relation' ? '' : undefined,
+      allowMultiple: type === 'relation' ? false : undefined,
+      actionScript: type === 'button' ? '' : undefined,
+      reference: '',
+      formula: ''
+    };
+    components.push(component);
+    return component;
+  };
+
+  const isIgnoredNode = (el: HTMLElement): boolean =>
+    ['SCRIPT', 'STYLE', 'NOSCRIPT', 'META', 'LINK', 'HEAD', 'TITLE'].includes(el.tagName);
+
+  const isRowLike = (el: HTMLElement): boolean => {
+    const c = `${el.className || ''}`.toLowerCase();
+    const style = `${el.getAttribute('style') || ''}`.toLowerCase();
+    return /\brow\b/.test(c) || /\bgrid\b/.test(c) || /\bflex\b/.test(c) || style.includes('display:flex') || style.includes('display: grid');
+  };
+
+  const toInputType = (el: HTMLElement): StudioComponentType => {
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'textarea') {
+      return 'textarea';
+    }
+    if (tag === 'select') {
+      return 'choice';
+    }
+    if (tag === 'button') {
+      return 'button';
+    }
+    if (tag === 'table') {
+      return 'table';
+    }
+    if (tag !== 'input') {
+      return 'text';
+    }
+    const inputType = (el.getAttribute('type') || 'text').toLowerCase();
+    if (inputType === 'number') return 'number';
+    if (inputType === 'checkbox') return 'checkbox';
+    if (inputType === 'range') return 'range';
+    if (inputType === 'date') return 'date';
+    if (inputType === 'time') return 'time';
+    if (inputType === 'color') return 'color';
+    return 'text';
+  };
+
+  const processNode = (node: Element, parentId: string | undefined) => {
+    const el = node as HTMLElement;
+    if (isIgnoredNode(el)) {
+      return;
+    }
+
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'table') {
+      const label = extractElementLabel(el, labelsByFor) || 'Tableau';
+      const table = createComponent('table', label, parentId, label);
+      const headers = Array.from(el.querySelectorAll('thead th, tr:first-child th, tr:first-child td'))
+        .map((cell) => cell.textContent?.trim() || '')
+        .filter(Boolean);
+      if (headers.length > 0) {
+        table.columns = headers;
+      }
+      return;
+    }
+
+    if (['input', 'textarea', 'select', 'button'].includes(tag)) {
+      const label = extractElementLabel(el, labelsByFor);
+      const type = toInputType(el);
+      const field = createComponent(type, label, parentId, el.getAttribute('name') || label);
+      if (type === 'choice') {
+        field.options = Array.from(el.querySelectorAll('option'))
+          .map((opt) => opt.textContent?.trim() || opt.getAttribute('value') || '')
+          .filter(Boolean);
+      }
+      if (type === 'number' || type === 'range') {
+        const min = Number(el.getAttribute('min'));
+        const max = Number(el.getAttribute('max'));
+        const step = Number(el.getAttribute('step'));
+        field.min = Number.isFinite(min) ? min : field.min;
+        field.max = Number.isFinite(max) ? max : field.max;
+        field.step = Number.isFinite(step) ? step : field.step;
+      }
+      if (type === 'checkbox') {
+        field.defaultValue = (el as HTMLInputElement).checked;
+      } else if (type === 'button') {
+        field.defaultValue = el.textContent?.trim() || field.label || 'Action';
+      } else {
+        const value = (el as HTMLInputElement).value;
+        if (value?.trim()) {
+          field.defaultValue = value.trim();
+        }
+      }
+      return;
+    }
+
+    const children = Array.from(el.children).filter((child) => !isIgnoredNode(child as HTMLElement));
+    if (children.length === 0) {
+      return;
+    }
+
+    const heading =
+      el.querySelector(':scope > legend, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6')?.textContent?.trim() ||
+      el.getAttribute('aria-label') ||
+      '';
+    const label = heading || el.getAttribute('id') || el.tagName.toLowerCase();
+
+    if (isRowLike(el) && children.length > 1) {
+      const row = createComponent('row', label || 'Ligne', parentId, label || 'row');
+      children.forEach((child) => {
+        const colLabel = (child as HTMLElement).getAttribute('aria-label') || (child as HTMLElement).getAttribute('id') || 'Colonne';
+        const col = createComponent('column', colLabel, row.id, colLabel);
+        processNode(child, col.id);
+      });
+      return;
+    }
+
+    const container = createComponent('container', label || 'Groupe', parentId, label || 'group');
+    const beforeCount = components.length;
+    children.forEach((child) => processNode(child, container.id));
+    if (components.length === beforeCount) {
+      components.pop();
+      warnings.push(`Conteneur ignoré (vide): ${container.label}`);
+    }
+  };
+
+  const roots = Array.from(doc.body.children);
+  roots.forEach((root) => processNode(root, undefined));
+
+  return { components, warnings };
+}
+
 function defaultRuntimeValue(component: StudioComponentDefinition): RuntimeValue {
   if (component.type === 'checkbox') {
     return Boolean(component.defaultValue);
@@ -616,6 +836,7 @@ export default function SystemStudioPage() {
   const [scriptTestInput, setScriptTestInput] = useState('{}');
   const [scriptTestResult, setScriptTestResult] = useState<string>('');
   const [blockJsonDraft, setBlockJsonDraft] = useState('');
+  const [htmlImportDraft, setHtmlImportDraft] = useState('');
   const lastSavedSchemaRef = useRef<string>('');
 
   const canEdit = Boolean(currentUser && system && canUserEditSystem(system, currentUser));
@@ -1221,6 +1442,47 @@ export default function SystemStudioPage() {
     }
   };
 
+  const importHtmlIntoSelectedView = () => {
+    if (!canEdit || !selectedView) {
+      return;
+    }
+    const raw = htmlImportDraft.trim();
+    if (!raw) {
+      setErrorMessage('HTML vide.');
+      return;
+    }
+    const converted = convertHtmlToStudioComponents(raw);
+    if (converted.components.length === 0) {
+      setErrorMessage(converted.warnings[0] || 'Aucun composant exploitable trouve dans ce HTML.');
+      return;
+    }
+
+    const usedKeys = new Set(selectedView.components.map((component) => component.key));
+    const keyMap = new Map<string, string>();
+    const parentMap = new Map<string, string | undefined>();
+
+    for (const component of converted.components) {
+      keyMap.set(component.id, makeId('cmp'));
+    }
+    for (const component of converted.components) {
+      parentMap.set(component.id, component.parentId && keyMap.has(component.parentId) ? keyMap.get(component.parentId) : undefined);
+    }
+
+    const normalized = converted.components.map((component) => ({
+      ...component,
+      id: keyMap.get(component.id) || makeId('cmp'),
+      parentId: parentMap.get(component.id),
+      key: makeUniqueKey(`${sanitizeKeySeed(component.key) || component.type}_html`, usedKeys)
+    }));
+
+    updateSelectedView((view) => ({ ...view, components: [...view.components, ...normalized] }));
+    setSelectedComponentId(normalized[0].id);
+    setStatusMessage(
+      `Import HTML reussi: ${normalized.length} bloc(s) ajoute(s)${converted.warnings.length ? ` (${converted.warnings.length} avertissement(s))` : ''}.`
+    );
+    setErrorMessage(null);
+  };
+
   const saveStudio = async (options?: { auto?: boolean }) => {
     if (!currentUser || !system || !schema || !canEdit) {
       return;
@@ -1611,6 +1873,47 @@ export default function SystemStudioPage() {
                         Astuce: depose un <strong>Tableau</strong> pour creer automatiquement <strong>Ligne</strong> puis <strong>Colonne</strong>.
                         Les blocs logiques (IF/THEN/ELSE/OR/NOT) sont aussi imbriquables.
                       </p>
+                      <details style={{ marginBottom: '0.75rem' }}>
+                        <summary>Convertisseur HTML vers Vue Studio</summary>
+                        <div style={{ display: 'grid', gap: '0.55rem', marginTop: '0.55rem' }}>
+                          <label style={{ display: 'grid', gap: '0.25rem' }}>
+                            <span>Importer un fichier HTML</span>
+                            <input
+                              type="file"
+                              accept=".html,text/html"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (!file) {
+                                  return;
+                                }
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  setHtmlImportDraft(String(reader.result || ''));
+                                  setStatusMessage(`Fichier HTML charge: ${file.name}`);
+                                };
+                                reader.onerror = () => setErrorMessage('Lecture du fichier HTML impossible.');
+                                reader.readAsText(file);
+                              }}
+                              disabled={!canEdit}
+                            />
+                          </label>
+                          <label style={{ display: 'grid', gap: '0.25rem' }}>
+                            <span>Ou coller le HTML</span>
+                            <textarea
+                              rows={8}
+                              value={htmlImportDraft}
+                              onChange={(event) => setHtmlImportDraft(event.target.value)}
+                              placeholder="<form>...</form>"
+                              disabled={!canEdit}
+                            />
+                          </label>
+                          <div>
+                            <Button type="button" variant="secondary" onClick={importHtmlIntoSelectedView} disabled={!canEdit || !htmlImportDraft.trim()}>
+                              Convertir et ajouter a la vue
+                            </Button>
+                          </div>
+                        </div>
+                      </details>
 
                       {selectedView.components.length === 0 ? (
                         <p style={{ margin: 0 }}>Depose un composant ici pour commencer.</p>
