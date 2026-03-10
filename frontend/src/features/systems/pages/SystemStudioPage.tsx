@@ -974,6 +974,7 @@ export default function SystemStudioPage() {
 
   const handleComponentDrop = (event: DragEvent<HTMLElement>, targetComponentId: string) => {
     event.preventDefault();
+    event.stopPropagation();
     setDragOverComponentId(null);
     if (!canEdit || !selectedView) {
       return;
