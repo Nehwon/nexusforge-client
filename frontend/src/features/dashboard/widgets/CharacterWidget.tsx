@@ -84,6 +84,25 @@ function canEditCharacter(character: Character, currentUser: User, role: 'gm' | 
 
 type StudioRuntimeValues = Record<string, string | number | boolean | string[]>;
 
+const STUDIO_STRUCTURAL_TYPES = new Set([
+  'container',
+  'row',
+  'column',
+  'tabs',
+  'tabs_nested',
+  'view',
+  'repeater',
+  'logic_if',
+  'logic_then',
+  'logic_else',
+  'logic_or',
+  'logic_not'
+]);
+
+function isStudioStructuralType(type: string): boolean {
+  return STUDIO_STRUCTURAL_TYPES.has(type);
+}
+
 function defaultStudioValue(component: NonNullable<GameSystem['studioSchema']>['views'][number]['components'][number]) {
   if (component.type === 'checkbox') {
     return Boolean(component.defaultValue);
@@ -830,6 +849,9 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
               <div className="studio-runtime-grid" style={{ marginTop: '0.65rem' }}>
                 {selectedStudioView.components
                   .filter((component) => {
+                    if (isStudioStructuralType(component.type)) {
+                      return false;
+                    }
                     if (!component.showIf?.trim()) {
                       return true;
                     }
@@ -913,11 +935,13 @@ export default function CharacterWidget({ currentUser, currentSession, role }: C
                       {component.type === 'relation' ? (
                         <select value={typeof value === 'string' ? value : ''} onChange={(event) => setStudioRuntimeValue(component, event.target.value)}>
                           <option value="">Cible</option>
-                          {selectedStudioView.components.map((candidate) => (
+                          {selectedStudioView.components
+                            .filter((candidate) => !isStudioStructuralType(candidate.type))
+                            .map((candidate) => (
                             <option key={candidate.key} value={candidate.key}>
                               {candidate.key}
                             </option>
-                          ))}
+                            ))}
                         </select>
                       ) : null}
                       {component.formula ? <small>formule: {component.formula}</small> : null}

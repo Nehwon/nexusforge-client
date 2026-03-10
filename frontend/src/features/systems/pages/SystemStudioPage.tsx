@@ -121,6 +121,17 @@ const PALETTE_TREE: Array<{ id: string; label: string; items: PaletteItem[] }> =
     ]
   },
   {
+    id: 'logic',
+    label: 'Logique visuelle',
+    items: [
+      { type: 'logic_if', label: 'Bloc IF' },
+      { type: 'logic_then', label: 'Bloc THEN' },
+      { type: 'logic_else', label: 'Bloc ELSE' },
+      { type: 'logic_or', label: 'Bloc OR' },
+      { type: 'logic_not', label: 'Bloc NOT' }
+    ]
+  },
+  {
     id: 'rpg-specialized',
     label: 'Composants JDR',
     items: [
@@ -157,6 +168,7 @@ function createComponentFromPalette(item: PaletteItem): StudioComponentDefinitio
     type: item.type,
     label: item.label,
     key: `${item.type}_${Math.random().toString(36).slice(2, 6)}`,
+    parentId: undefined,
     defaultValue: item.defaultValue,
     placeholder: '',
     options: item.options,
@@ -175,6 +187,94 @@ function createComponentFromPalette(item: PaletteItem): StudioComponentDefinitio
     reference: '',
     formula: ''
   };
+}
+
+const STRUCTURAL_TYPES: StudioComponentType[] = [
+  'container',
+  'row',
+  'column',
+  'tabs',
+  'tabs_nested',
+  'view',
+  'repeater',
+  'logic_if',
+  'logic_then',
+  'logic_else',
+  'logic_or',
+  'logic_not'
+];
+
+function isStructuralType(type: StudioComponentType): boolean {
+  return STRUCTURAL_TYPES.includes(type);
+}
+
+function canContain(parentType: StudioComponentType, childType: StudioComponentType): boolean {
+  if (parentType === 'table' || parentType === 'inventory') {
+    return childType === 'row';
+  }
+  if (parentType === 'row') {
+    return childType === 'column';
+  }
+  if (parentType === 'column') {
+    return childType !== 'row';
+  }
+  if (parentType === 'logic_if') {
+    return ['logic_then', 'logic_else', 'logic_or', 'logic_not'].includes(childType);
+  }
+  if (parentType === 'logic_then' || parentType === 'logic_else' || parentType === 'logic_or' || parentType === 'logic_not') {
+    return childType !== 'row';
+  }
+  if (parentType === 'container' || parentType === 'view' || parentType === 'repeater' || parentType === 'tabs' || parentType === 'tabs_nested') {
+    return childType !== 'row';
+  }
+  return false;
+}
+
+function buildChildrenMap(components: StudioComponentDefinition[]): Record<string, StudioComponentDefinition[]> {
+  return components.reduce<Record<string, StudioComponentDefinition[]>>((acc, component) => {
+    if (!component.parentId) {
+      return acc;
+    }
+    if (!acc[component.parentId]) {
+      acc[component.parentId] = [];
+    }
+    acc[component.parentId].push(component);
+    return acc;
+  }, {});
+}
+
+function collectDescendantIds(
+  componentId: string,
+  childrenByParent: Record<string, StudioComponentDefinition[]>,
+  seen = new Set<string>()
+): string[] {
+  if (seen.has(componentId)) {
+    return [];
+  }
+  seen.add(componentId);
+  const children = childrenByParent[componentId] ?? [];
+  const ids: string[] = [];
+  for (const child of children) {
+    ids.push(child.id);
+    ids.push(...collectDescendantIds(child.id, childrenByParent, seen));
+  }
+  return ids;
+}
+
+function getComponentFamily(type: StudioComponentType): 'layout' | 'logic' | 'action' | 'rpg' | 'field' {
+  if (['container', 'row', 'column', 'tabs', 'tabs_nested', 'view', 'repeater', 'table', 'inventory'].includes(type)) {
+    return 'layout';
+  }
+  if (['logic_if', 'logic_then', 'logic_else', 'logic_or', 'logic_not'].includes(type)) {
+    return 'logic';
+  }
+  if (['button', 'dice_roll'].includes(type)) {
+    return 'action';
+  }
+  if (['relation', 'avatar'].includes(type)) {
+    return 'rpg';
+  }
+  return 'field';
 }
 
 function defaultRuntimeValue(component: StudioComponentDefinition): RuntimeValue {
@@ -409,6 +509,9 @@ function executeRuntimeScript(script: string, values: RuntimeValues): { nextValu
 }
 
 function renderComponentPreview(component: StudioComponentDefinition): JSX.Element {
+  if (component.type === 'logic_if' || component.type === 'logic_then' || component.type === 'logic_else' || component.type === 'logic_or' || component.type === 'logic_not') {
+    return <code>{component.formula || component.showIf || 'Bloc logique'}</code>;
+  }
   if (component.type === 'checkbox') {
     return (
       <label>
@@ -447,16 +550,7 @@ function renderComponentPreview(component: StudioComponentDefinition): JSX.Eleme
     return <code>{component.diceFormula || component.formula || '1d20'}</code>;
   }
   if (component.type === 'table' || component.type === 'inventory') {
-    const headers = component.columns ?? ['Col A', 'Col B'];
-    return (
-      <div style={{ display: 'grid', gap: '0.2rem' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${headers.length}, minmax(0, 1fr))`, gap: '0.25rem', fontSize: '0.75rem' }}>
-          {headers.map((header) => (
-            <strong key={header}>{header}</strong>
-          ))}
-        </div>
-      </div>
-    );
+    return <small>{component.type === 'table' ? 'Tableau imbrique: lignes > colonnes > champs' : 'Inventaire imbrique'}</small>;
   }
   if (component.type === 'relation') {
     return <code>ref: {component.relationTarget || 'target'}</code>;
@@ -517,6 +611,22 @@ export default function SystemStudioPage() {
     }
     return selectedView.components.find((component) => component.id === selectedComponentId) ?? null;
   }, [selectedComponentId, selectedView]);
+
+  const childrenByParent = useMemo(() => {
+    if (!selectedView) {
+      return {};
+    }
+    return buildChildrenMap(selectedView.components);
+  }, [selectedView]);
+
+  const rootComponents = useMemo(() => {
+    if (!selectedView) {
+      return [];
+    }
+    const existingIds = new Set(selectedView.components.map((component) => component.id));
+    return selectedView.components.filter((component) => !component.parentId || !existingIds.has(component.parentId));
+  }, [selectedView]);
+
   const allButtonTemplates = useMemo<ButtonScriptTemplate[]>(
     () => [...BUTTON_SCRIPT_TEMPLATES, ...customButtonTemplates],
     [customButtonTemplates]
@@ -739,19 +849,93 @@ export default function SystemStudioPage() {
     event.dataTransfer.effectAllowed = 'move';
   };
 
-  const reorderComponent = (sourceId: string, targetId: string) => {
+  const insertWithParent = (
+    components: StudioComponentDefinition[],
+    component: StudioComponentDefinition,
+    parentId: string | undefined,
+    beforeId?: string
+  ): StudioComponentDefinition[] => {
+    const next = [...components];
+    const item = { ...component, parentId };
+    if (beforeId) {
+      const beforeIndex = next.findIndex((entry) => entry.id === beforeId);
+      if (beforeIndex >= 0) {
+        next.splice(beforeIndex, 0, item);
+        return next;
+      }
+    }
+    if (parentId) {
+      const lastChildIndex = next.reduce((last, entry, index) => (entry.parentId === parentId ? index : last), -1);
+      if (lastChildIndex >= 0) {
+        next.splice(lastChildIndex + 1, 0, item);
+        return next;
+      }
+      const parentIndex = next.findIndex((entry) => entry.id === parentId);
+      if (parentIndex >= 0) {
+        next.splice(parentIndex + 1, 0, item);
+        return next;
+      }
+    }
+    next.push(item);
+    return next;
+  };
+
+  const moveComponent = (sourceId: string, targetId: string) => {
     if (!selectedView || sourceId === targetId) {
       return;
     }
+
     const components = [...selectedView.components];
-    const sourceIndex = components.findIndex((item) => item.id === sourceId);
-    const targetIndex = components.findIndex((item) => item.id === targetId);
-    if (sourceIndex < 0 || targetIndex < 0) {
+    const source = components.find((item) => item.id === sourceId);
+    const target = components.find((item) => item.id === targetId);
+    if (!source || !target) {
       return;
     }
-    const [moved] = components.splice(sourceIndex, 1);
-    components.splice(targetIndex, 0, moved);
-    updateSelectedView((view) => ({ ...view, components }));
+
+    const childrenMap = buildChildrenMap(components);
+    const descendants = new Set(collectDescendantIds(sourceId, childrenMap));
+    if (descendants.has(targetId)) {
+      return;
+    }
+
+    const targetAccepts = canContain(target.type, source.type);
+    const nextParentId = targetAccepts ? target.id : target.parentId;
+
+    const sourceChildrenIds = new Set([sourceId, ...collectDescendantIds(sourceId, childrenMap)]);
+    const extracted = components.filter((entry) => sourceChildrenIds.has(entry.id));
+    const rest = components.filter((entry) => !sourceChildrenIds.has(entry.id));
+    const movedRoot = extracted.find((entry) => entry.id === sourceId);
+    if (!movedRoot) {
+      return;
+    }
+    const movedDescendants = extracted.filter((entry) => entry.id !== sourceId);
+    const moved = { ...movedRoot, parentId: nextParentId };
+
+    let merged = [...rest];
+    if (targetAccepts) {
+      merged = insertWithParent(merged, moved, nextParentId);
+    } else {
+      merged = insertWithParent(merged, moved, nextParentId, target.id);
+    }
+    const parentIndex = merged.findIndex((entry) => entry.id === moved.id);
+    if (parentIndex < 0) {
+      return;
+    }
+    merged.splice(parentIndex + 1, 0, ...movedDescendants);
+
+    updateSelectedView((view) => ({ ...view, components: merged }));
+  };
+
+  const createComponentWithDefaultChildren = (item: PaletteItem): StudioComponentDefinition[] => {
+    const created = createComponentFromPalette(item);
+    if (item.type === 'table' || item.type === 'inventory') {
+      const row = createComponentFromPalette({ type: 'row', label: 'Ligne', defaultValue: '' });
+      row.parentId = created.id;
+      const column = createComponentFromPalette({ type: 'column', label: 'Colonne', defaultValue: '' });
+      column.parentId = row.id;
+      return [created, row, column];
+    }
+    return [created];
   };
 
   const handleCanvasDrop = (event: DragEvent<HTMLElement>) => {
@@ -764,9 +948,9 @@ export default function SystemStudioPage() {
     if (paletteRaw) {
       try {
         const item = JSON.parse(paletteRaw) as PaletteItem;
-        const created = createComponentFromPalette(item);
-        updateSelectedView((view) => ({ ...view, components: [...view.components, created] }));
-        setSelectedComponentId(created.id);
+        const created = createComponentWithDefaultChildren(item);
+        updateSelectedView((view) => ({ ...view, components: [...view.components, ...created] }));
+        setSelectedComponentId(created[0].id);
       } catch {
         setErrorMessage('Composant palette invalide.');
       }
@@ -782,7 +966,7 @@ export default function SystemStudioPage() {
           return view;
         }
         const [moved] = components.splice(sourceIndex, 1);
-        components.push(moved);
+        components.push({ ...moved, parentId: undefined });
         return { ...view, components };
       });
     }
@@ -797,7 +981,7 @@ export default function SystemStudioPage() {
 
     const sourceComponentId = event.dataTransfer.getData('application/nexusforge-component-id');
     if (sourceComponentId) {
-      reorderComponent(sourceComponentId, targetComponentId);
+      moveComponent(sourceComponentId, targetComponentId);
       return;
     }
 
@@ -808,13 +992,35 @@ export default function SystemStudioPage() {
 
     try {
       const item = JSON.parse(paletteRaw) as PaletteItem;
-      const created = createComponentFromPalette(item);
-      const components = [...selectedView.components];
-      const targetIndex = components.findIndex((component) => component.id === targetComponentId);
-      const insertionIndex = targetIndex >= 0 ? targetIndex : components.length;
-      components.splice(insertionIndex, 0, created);
-      updateSelectedView((view) => ({ ...view, components }));
-      setSelectedComponentId(created.id);
+      const target = selectedView.components.find((component) => component.id === targetComponentId);
+      const created = createComponentWithDefaultChildren(item);
+      if (!target) {
+        updateSelectedView((view) => ({ ...view, components: [...view.components, ...created] }));
+        setSelectedComponentId(created[0].id);
+        return;
+      }
+      const acceptedAsChild = canContain(target.type, created[0].type);
+      const parentId = acceptedAsChild ? target.id : target.parentId;
+      created[0].parentId = parentId;
+      if (created.length > 1) {
+        const maybeRow = created[1];
+        if (maybeRow) {
+          maybeRow.parentId = created[0].id;
+        }
+      }
+      if (created.length > 2) {
+        const maybeColumn = created[2];
+        if (maybeColumn) {
+          maybeColumn.parentId = created[1].id;
+        }
+      }
+      updateSelectedView((view) => {
+        const components = insertWithParent([...view.components], created[0], parentId, acceptedAsChild ? undefined : target.id);
+        const parentIndex = components.findIndex((component) => component.id === created[0].id);
+        components.splice(parentIndex + 1, 0, ...created.slice(1));
+        return { ...view, components };
+      });
+      setSelectedComponentId(created[0].id);
     } catch {
       setErrorMessage('Composant palette invalide.');
     }
@@ -846,7 +1052,9 @@ export default function SystemStudioPage() {
     if (!canEdit || !selectedView || !selectedComponent) {
       return;
     }
-    updateSelectedView((view) => ({ ...view, components: view.components.filter((item) => item.id !== selectedComponent.id) }));
+    const childrenMap = buildChildrenMap(selectedView.components);
+    const idsToDelete = new Set([selectedComponent.id, ...collectDescendantIds(selectedComponent.id, childrenMap)]);
+    updateSelectedView((view) => ({ ...view, components: view.components.filter((item) => !idsToDelete.has(item.id)) }));
     setSelectedComponentId('');
   };
 
@@ -916,9 +1124,13 @@ export default function SystemStudioPage() {
       ? { gridTemplateColumns: `${leftPanelWidth}px 8px minmax(420px, 1fr) 8px ${rightPanelWidth}px` }
       : undefined;
 
-  const relationTargets = selectedView?.components.map((component) => component.key) ?? [];
+  const relationTargets =
+    selectedView?.components.filter((component) => !isStructuralType(component.type)).map((component) => component.key) ?? [];
   const visibleRuntimeComponents =
     selectedView?.components.filter((component) => {
+      if (isStructuralType(component.type)) {
+        return false;
+      }
       if (!component.showIf?.trim()) {
         return true;
       }
@@ -1013,6 +1225,67 @@ export default function SystemStudioPage() {
     setSelectedButtonTemplateId('');
     setStatusMessage(`Template supprime: ${template.label}`);
     setErrorMessage(null);
+  };
+
+  const detachSelectedComponent = () => {
+    if (!canEdit || !selectedComponent) {
+      return;
+    }
+    updateSelectedView((view) => ({
+      ...view,
+      components: view.components.map((item) => (item.id === selectedComponent.id ? { ...item, parentId: undefined } : item))
+    }));
+  };
+
+  const renderCanvasComponent = (component: StudioComponentDefinition, depth: number, ancestry: Set<string>): JSX.Element => {
+    const family = getComponentFamily(component.type);
+    const children = childrenByParent[component.id] ?? [];
+    const isBlocked = ancestry.has(component.id);
+    const nextAncestry = new Set(ancestry);
+    nextAncestry.add(component.id);
+
+    return (
+      <article
+        key={component.id}
+        className={`studio-component-card family-${family} type-${component.type} ${selectedComponentId === component.id ? 'is-selected' : ''} ${
+          dragOverComponentId === component.id ? 'is-drag-over' : ''
+        }`}
+        style={{ marginLeft: `${Math.min(depth * 18, 140)}px` }}
+        draggable={canEdit}
+        onDragStart={(event) => handleComponentDragStart(event, component.id)}
+        onDragOver={(event) => {
+          if (canEdit) {
+            event.preventDefault();
+            setDragOverComponentId(component.id);
+          }
+        }}
+        onDragLeave={() => setDragOverComponentId((current) => (current === component.id ? null : current))}
+        onDrop={(event) => handleComponentDrop(event, component.id)}
+        onClick={() => setSelectedComponentId(component.id)}
+      >
+        <div className="studio-component-card__head">
+          <strong>{component.label || '(sans label)'}</strong>
+          <span className={`studio-component-badge family-${family}`}>{component.type}</span>
+        </div>
+        <span>Cle: {component.key}</span>
+        <div style={{ marginTop: '0.25rem' }}>{renderComponentPreview(component)}</div>
+        <small>
+          {canContain(component.type, 'row')
+            ? 'Conteneur de lignes'
+            : canContain(component.type, 'column')
+            ? 'Conteneur de colonnes'
+            : children.length > 0
+            ? `${children.length} enfant(s)`
+            : 'Bloc feuille'}
+        </small>
+
+        {children.length > 0 && !isBlocked ? (
+          <div className="studio-component-children">
+            {children.map((child) => renderCanvasComponent(child, depth + 1, nextAncestry))}
+          </div>
+        ) : null}
+      </article>
+    );
   };
 
   return (
@@ -1171,35 +1444,16 @@ export default function SystemStudioPage() {
                           disabled={!canEdit}
                         />
                       </label>
+                      <p style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '0.9rem', opacity: 0.9 }}>
+                        Astuce: depose un <strong>Tableau</strong> pour creer automatiquement <strong>Ligne</strong> puis <strong>Colonne</strong>.
+                        Les blocs logiques (IF/THEN/ELSE/OR/NOT) sont aussi imbriquables.
+                      </p>
 
                       {selectedView.components.length === 0 ? (
                         <p style={{ margin: 0 }}>Depose un composant ici pour commencer.</p>
                       ) : (
                         <div className="studio-components-grid">
-                          {selectedView.components.map((component) => (
-                            <article
-                              key={component.id}
-                              className={`studio-component-card ${selectedComponentId === component.id ? 'is-selected' : ''} ${
-                                dragOverComponentId === component.id ? 'is-drag-over' : ''
-                              }`}
-                              draggable={canEdit}
-                              onDragStart={(event) => handleComponentDragStart(event, component.id)}
-                              onDragOver={(event) => {
-                                if (canEdit) {
-                                  event.preventDefault();
-                                  setDragOverComponentId(component.id);
-                                }
-                              }}
-                              onDragLeave={() => setDragOverComponentId((current) => (current === component.id ? null : current))}
-                              onDrop={(event) => handleComponentDrop(event, component.id)}
-                              onClick={() => setSelectedComponentId(component.id)}
-                            >
-                              <strong>{component.label || '(sans label)'}</strong>
-                              <span>Type: {component.type}</span>
-                              <span>Cle: {component.key}</span>
-                              <div style={{ marginTop: '0.25rem' }}>{renderComponentPreview(component)}</div>
-                            </article>
-                          ))}
+                          {rootComponents.map((component) => renderCanvasComponent(component, 0, new Set<string>()))}
                         </div>
                       )}
                     </>
@@ -1335,6 +1589,19 @@ export default function SystemStudioPage() {
                     <p style={{ margin: 0, fontSize: '0.85rem' }}>
                       Type: <strong>{selectedComponent.type}</strong>
                     </p>
+                    <p style={{ margin: 0, fontSize: '0.85rem' }}>
+                      Parent: <strong>{selectedComponent.parentId || 'racine'}</strong>
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={detachSelectedComponent}
+                        disabled={!canEdit || !selectedComponent.parentId}
+                      >
+                        Remonter a la racine
+                      </Button>
+                    </div>
                     <label>
                       <span>Label</span>
                       <input

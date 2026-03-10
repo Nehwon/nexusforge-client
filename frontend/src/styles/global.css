@@ -974,18 +974,48 @@ body.theme-dark .system-builder__toolbar {
 
 .studio-components-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
 }
 
 .studio-component-card {
-  border: 1px solid #d0d5dd;
-  border-radius: 10px;
+  border: 2px solid #d0d5dd;
+  border-radius: 12px;
   background: #ffffff;
-  padding: 0.55rem;
+  padding: 0.6rem;
   display: grid;
-  gap: 0.25rem;
+  gap: 0.3rem;
   cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.studio-component-card:hover {
+  transform: translateY(-1px);
+}
+
+.studio-component-card__head {
+  display: flex;
+  gap: 0.45rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.studio-component-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid currentColor;
+}
+
+.studio-component-children {
+  border-left: 2px dashed rgba(15, 23, 42, 0.25);
+  padding-left: 0.55rem;
+  margin-top: 0.2rem;
 }
 
 .studio-component-card.is-selected {
@@ -996,6 +1026,74 @@ body.theme-dark .system-builder__toolbar {
 .studio-component-card.is-drag-over {
   border-color: #155eef;
   background: #eef4ff;
+  box-shadow: 0 0 0 2px rgba(21, 94, 239, 0.16);
+}
+
+.studio-component-card.family-layout {
+  background: #eef8ff;
+  border-color: #0284c7;
+}
+
+.studio-component-card.family-logic {
+  background: #ecfdf3;
+  border-color: #15803d;
+}
+
+.studio-component-card.family-action {
+  background: #fff7ed;
+  border-color: #c2410c;
+}
+
+.studio-component-card.family-rpg {
+  background: #f5f3ff;
+  border-color: #6d28d9;
+}
+
+.studio-component-card.family-field {
+  background: #f8fafc;
+  border-color: #475467;
+}
+
+.studio-component-badge.family-layout {
+  color: #0369a1;
+}
+
+.studio-component-badge.family-logic {
+  color: #166534;
+}
+
+.studio-component-badge.family-action {
+  color: #9a3412;
+}
+
+.studio-component-badge.family-rpg {
+  color: #6b21a8;
+}
+
+.studio-component-badge.family-field {
+  color: #334155;
+}
+
+.studio-component-card.type-table,
+.studio-component-card.type-inventory {
+  border-style: solid;
+}
+
+.studio-component-card.type-row {
+  border-style: dashed;
+}
+
+.studio-component-card.type-column {
+  border-style: dotted;
+}
+
+.studio-component-card.type-logic_if {
+  border-width: 3px;
+}
+
+.studio-component-card.type-logic_then,
+.studio-component-card.type-logic_else {
+  border-width: 2px;
 }
 
 .studio-properties {
@@ -1073,6 +1171,35 @@ body.theme-dark .studio-component-card {
 
 body.theme-dark .studio-component-card.is-drag-over {
   background: #1e293b;
+}
+
+body.theme-dark .studio-component-children {
+  border-left-color: rgba(148, 163, 184, 0.35);
+}
+
+body.theme-dark .studio-component-card.family-layout {
+  background: rgba(3, 105, 161, 0.17);
+  border-color: #0ea5e9;
+}
+
+body.theme-dark .studio-component-card.family-logic {
+  background: rgba(22, 163, 74, 0.16);
+  border-color: #22c55e;
+}
+
+body.theme-dark .studio-component-card.family-action {
+  background: rgba(234, 88, 12, 0.16);
+  border-color: #f97316;
+}
+
+body.theme-dark .studio-component-card.family-rpg {
+  background: rgba(124, 58, 237, 0.16);
+  border-color: #a855f7;
+}
+
+body.theme-dark .studio-component-card.family-field {
+  background: rgba(51, 65, 85, 0.5);
+  border-color: #64748b;
 }
 
 body.theme-dark .studio-runtime {

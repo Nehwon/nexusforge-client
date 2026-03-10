@@ -74,13 +74,19 @@ export type StudioComponentType =
   | 'table'
   | 'inventory'
   | 'relation'
-  | 'tabs_nested';
+  | 'tabs_nested'
+  | 'logic_if'
+  | 'logic_then'
+  | 'logic_else'
+  | 'logic_or'
+  | 'logic_not';
 
 export interface StudioComponentDefinition {
   id: string;
   type: StudioComponentType;
   label: string;
   key: string;
+  parentId?: string;
   defaultValue?: string | number | boolean;
   placeholder?: string;
   options?: string[];
