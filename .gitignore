@@ -31,3 +31,6 @@ frontend/*.tsbuildinfo
 # Misc
 .tmp/
 tmp/
+
+# Audit reports
+audit/
