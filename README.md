@@ -1,190 +1,339 @@
-# Nexus Forge
+# Application Native Android pour NexusForge
 
-Nexus Forge est une application de gestion de jeux de rôle sur table (JDR) **offline‑first**, pensée pour toute la table : meneur de jeu (MJ) et joueurs.  
-Elle permet de créer des systèmes de jeu génériques, gérer fiches de personnages, campagnes, notes et documents, et de jouer en session live avec multi‑écrans.
-
----
-
-## Objectifs du projet
-
-- Offrir un **outil générique** non lié à un système de JDR particulier.
-- Permettre aux utilisateurs de **créer / dupliquer / modifier** leurs propres systèmes de jeu sans écrire de code.
-- Fonctionner en mode **offline‑first** sur PC, tablette et téléphone, avec synchronisation vers une plateforme web.
-- Faciliter la gestion de table en session (présentiel ou en ligne) avec :
-  - vues dédiées MJ, battlemap et joueurs,
-  - communication riche (chat, messages privés, partage de documents),
-  - dashboard MJ totalement personnalisable.
+**Date**: 27 avril 2026
+**Version**: 1.0
+**Auteur**: Cascade AI
 
 ---
 
-## Fonctionnalités principales (vision)
+## Table des matières
 
-### 1. Systèmes de jeu génériques
-
-- Création et édition de systèmes agnostiques (stats, jets, combats, progression, etc.).
-- Éditeur visuel **type Scratch** (blocs drag & drop) pour définir les règles.
-- Mode avancé avec scripts JavaScript sandboxés.
-- Import / export complet en **JSON** (systèmes, règles, fiches).
-
-### 2. Fiches et données de campagne
-
-- Fiches **PJ** et **PNJ** basées sur les systèmes configurés.
-- **Notes privées joueur**, **notes publiques** de campagne, **notes privées MJ**.
-- Documents liés : images, PDF, handouts, fiches, objets, etc.
-
-### 3. Offline‑first et synchronisation
-
-- Fonctionnement complet **hors ligne** sur chaque appareil.
-- Base locale + journalisation des actions pour synchro ultérieure.
-- Règles de résolution de conflits :
-  - MJ prioritaire sur la majorité des données,
-  - fiches PJ : validation champ par champ par le MJ en cas de conflit.
-
-### 4. Sessions live et multi‑écrans
-
-- Création de sessions live (présentiel ou online).
-- Trois vues principales :
-  - **Écran MJ** : dashboard complet, outils, notes privées.
-  - **Battlemap** : carte, tokens, fog of war.
-  - **Infos joueurs** : initiative, effets, docs, handouts, images, etc.
-- Support multi‑écrans / multi‑onglets (un écran par vue).
-
-### 5. Dashboard MJ drag & drop
-
-- Dashboard MJ sous forme de **widgets** :
-  - initiative, liste PJ/PNJ, notes, contrôles battlemap, contrôles écran joueurs, messages privés, macros, etc.
-- Organisation libre par drag & drop, redimensionnement, presets par campagne/système.
-
-### 6. Communication & partage
-
-- Chat global, messages privés MJ ↔ joueur, messages entre joueurs, groupes de joueurs.
-- Partage de documents ciblé :
-  - à un joueur, plusieurs, ou tous.
-- Bandeaux d’alerte **très visibles** au centre de l’écran lors de l’arrivée d’un message/document.
-- Possibilité pour le MJ de **bloquer les communications** joueurs↔joueurs.
+1. [Introduction](#introduction)
+2. [Architecture](#architecture)
+3. [Technologies](#technologies)
+4. [Fonctionnalités](#fonctionnalités)
+5. [Installation](#installation)
+6. [Configuration](#configuration)
+7. [Structure du projet](#structure-du-projet)
+8. [Recommandations](#recommandations)
 
 ---
 
-## Stack technique envisagée
+## Introduction
 
-*(indicatif, sujet à évolution)*
+Ce dossier contient les spécifications et le code pour une application native Android pour NexusForge. L'objectif est de fournir une expérience utilisateur plus efficace et optimisée que le site web en mode responsif.
 
-- Frontend : PWA (TypeScript, framework JS moderne).
-- Stockage local : IndexedDB (via une librairie adaptée, ex. RxDB/Dexie).
-- Backend : API + canal temps réel (WebSockets).
-- Éditeur de règles : blocs visuels (type Blockly) + éditeur de code (type Monaco).
+**Architecture hybride**: L'application utilise Rust pour la logique métier et le traitement de données (via Android NDK), et Kotlin pour l'interface utilisateur (Jetpack Compose).
 
 ---
 
-## État du projet
+## Architecture
 
-Le projet est en **prototype fonctionnel offline-first** avec:
+L'application native Android sera conçue selon une architecture hybride Rust + Kotlin pour maximiser les performances et la sécurité:
 
-- session locale (chargement IndexedDB),
-- chat persistant,
-- initiative persistante,
-- notes/documents persistants,
-- sync locale avec gestion des conflits,
-- dashboard multi-profils par compte/rôle (drag & drop + tailles widgets),
-- catalogue des systèmes de jeu (sélection, création, duplication),
-- éditeur visuel de système type Scratch (blocs + drag & drop),
-- templates de fiches de référence (CRUD, drag & drop champs/groupes, preview),
-- création de fiches de session depuis templates système,
-- permissions d'édition des systèmes (propriétaire ou admin),
-- seed `SteamShadows Core` enrichi (PJ, PNJ, Créature, Horreurs Arcanum).
-
-Suivi détaillé de l'avancement: [`docs/suivi-travail.md`](docs/suivi-travail.md).  
-Contrats API (MVP): [`docs/api/index.md`](docs/api/index.md).
+1. **Rust (via Android NDK)**: Logique métier, traitement de données, calculs intensifs, synchronisation
+2. **Kotlin (UI uniquement)**: Interface utilisateur avec Jetpack Compose (obligatoire car Rust ne peut pas créer directement l'UI Android)
+3. **SurrealDB**: Base de données multi-model en Rust pour le stockage local
+4. **JNI**: Communication entre Rust et Kotlin
 
 ---
 
-## Roadmap (première itération)
+## Technologies
 
-1. Définition des schémas JSON de base :
-   - systèmes de jeu,
-   - fiches PJ/PNJ,
-   - sessions, notes, messages, documents.
-2. Prototype de l’éditeur de systèmes (blocs + JSON + exécution locale).
-3. Prototype minimal de session live (MJ + 1 joueur, initiative et chat).
-4. Mise en place du dashboard MJ simple.
-5. Ajout progressif :
-   - multi‑écrans,
-   - partage de documents,
-   - groupes de communication.
+### Langage de programmation
+
+- **Rust**: Langage principal pour la logique métier, le traitement de données et les calculs intensifs (via Android NDK)
+- **Kotlin**: Langage pour l'interface utilisateur uniquement (Jetpack Compose) - obligatoire car Rust ne peut pas créer directement l'UI Android
+
+### Frameworks et bibliothèques
+
+**Pour Rust**:
+- **SurrealDB**: Base de données multi-model pour le stockage local
+- **jsonwebtoken**: Validation et génération de JWT
+- **totp-lite**: Implémentation TOTP pour MFA
+- **cargo-ndk**: Cross-compilation Android
+- **jni**: Bindings JNI pour la communication Kotlin
+
+**Pour Kotlin (UI)**:
+- **Jetpack Compose**: Pour la construction de l'interface utilisateur.
+- **Android Jetpack**: Ensemble de bibliothèques pour simplifier le développement Android.
+  - **ViewModel**: Pour gérer les données liées à l'UI.
+  - **LiveData**: Pour observer les changements de données.
+  - **Navigation**: Pour la navigation entre les écrans.
+  - **WorkManager**: Pour les tâches en arrière-plan.
+  - **BiometricPrompt**: Pour la biométrie.
+  - **EncryptedSharedPreferences**: Stockage sécurisé.
+  - **Jetpack Security**: Chiffrement des données.
+- **Hilt**: Pour l'injection de dépendances dans l'UI Kotlin.
+- **Espresso**: Pour les tests d'interface utilisateur.
+
+### Outils de développement
+
+- **Android Studio**: Environnement de développement intégré (IDE).
+- **Rust toolchain**: Cargo, rustc, rustup.
+- **Gradle**: Système de build.
+- **Git**: Pour le contrôle de version.
+- **cargo-ndk**: Pour la cross-compilation Android.
 
 ---
 
-## Contribuer
+## Fonctionnalités
 
-Les contributions seront bienvenues une fois les premiers schémas et choix techniques stabilisés.  
-Les pistes de contribution incluent :
+### Fonctionnalités principales
 
-- schémas de données (JSON),
-- UX/UI (dashboard MJ, fiches, écrans joueurs),
-- moteur de règles,
-- gestion offline / synchronisation.
+1. **Authentification**:
+   - Connexion et inscription des utilisateurs.
+   - Gestion des sessions avec JWT.
+   - Authentification à deux facteurs (MFA/TOTP).
+   - Sécurité locale via biométrie ou PIN.
+   - Communication avec backend React+TypeScript existant.
+
+2. **Gestion des sessions de jeu**:
+   - Création et gestion des sessions de jeu.
+   - Invitation et gestion des joueurs.
+   - Chat en temps réel.
+
+3. **Gestion des personnages**:
+   - Création et édition de fiches de personnages.
+   - Gestion des attributs et compétences.
+   - Suivi des objets et équipements.
+
+4. **Système de règles**:
+   - Moteur de règles visuel pour les systèmes de jeu.
+   - Évaluation des formules et conditions.
+   - Gestion des dés et des jets.
+
+5. **Mode hors ligne**:
+   - Synchronisation des données locales avec SurrealDB.
+   - Gestion des conflits de synchronisation avec CRDTs.
+   - Accès aux données hors ligne.
+   - Live Queries pour les mises à jour en temps réel.
+
+6. **Dashboard MJ**:
+   - Tableau de bord configurable pour le Maître du Jeu.
+   - Gestion des notes et des documents.
+   - Suivi des sessions et des événements.
+
+### Fonctionnalités supplémentaires
+
+1. **Notifications**:
+   - Notifications push pour les mises à jour et les invitations.
+   - Rappels pour les sessions de jeu.
+   - Ajout aux calendriers existant (Google Calendar, Outlook, etc.)
+
+2. **Internationalisation**:
+   - Support multilingue.
+   - Gestion des fuseaux horaires.
+
+3. **Accessibilité**:
+   - Support des fonctionnalités d'accessibilité Android.
+   - Thèmes clair et sombre.
 
 ---
 
-## Licence
+## Installation
 
-Nexus Forge est distribué sous licence **Apache License 2.0**.  
-Voir le fichier [`LICENSE`](LICENSE) pour plus de détails.
+### Prérequis
+
+- Android Studio (version 4.2 ou supérieure).
+- Rust toolchain (stable).
+- Android NDK.
+- JDK 11 ou supérieur.
+- Android SDK (version 33 ou supérieure).
+- Git.
+
+### Étapes d'installation
+
+1. **Cloner le dépôt**:
+   ```bash
+   git clone https://github.com/votre-depot/nexusforge.git
+   cd nexusforge/NexusForge/features/App_Native
+   ```
+
+2. **Ouvrir le projet dans Android Studio**:
+   - Lancer Android Studio.
+   - Sélectionner "Open an existing project".
+   - Naviguer jusqu'au dossier `App_Native` et ouvrir le fichier `build.gradle`.
+
+3. **Configurer le SDK**:
+   - Assurez-vous que le SDK Android est configuré correctement.
+   - Installez les packages SDK nécessaires via le SDK Manager.
+
+4. **Builder le projet**:
+   - Cliquer sur "Build" > "Make Project" pour builder le projet.
 
 ---
 
-## Déploiement frontend connecté backend
+## Configuration
 
-Le frontend de production est prévu pour un backend réel.
+### Configuration de l'environnement
 
-Variables Vite (voir `frontend/.env.example`):
+1. **Fichier `local.properties`**:
+   - Configurer le chemin du SDK Android.
+   - Exemple:
+     ```properties
+     sdk.dir=/Users/votre-utilisateur/Library/Android/sdk
+     ```
 
-- `VITE_API_BASE_URL=https://api.votre-domaine.tld`
-- `VITE_BACKEND_ENABLED=true`
-- `VITE_SYNC_TRANSPORT=http`
+2. **Fichier `gradle.properties`**:
+   - Configurer les propriétés de build.
+   - Exemple:
+     ```properties
+     org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+     android.useAndroidX=true
+     android.enableJetifier=true
+     ```
 
-Build:
+### Configuration de l'application
 
-```bash
-cd frontend
-npm ci
-npm run build
+1. **Fichier `AndroidManifest.xml`**:
+   - Configurer les permissions et les activités.
+   - Exemple:
+     ```xml
+     <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+         package="com.nexusforge.app">
+         <uses-permission android:name="android.permission.INTERNET" />
+         <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+         <application
+             android:allowBackup="true"
+             android:icon="@mipmap/ic_launcher"
+             android:label="@string/app_name"
+             android:roundIcon="@mipmap/ic_launcher_round"
+             android:supportsRtl="true"
+             android:theme="@style/Theme.NexusForge">
+             <activity android:name=".MainActivity">
+                 <intent-filter>
+                     <action android:name="android.intent.action.MAIN" />
+                     <category android:name="android.intent.category.LAUNCHER" />
+                 </intent-filter>
+             </activity>
+         </application>
+     </manifest>
+     ```
+
+2. **Fichier `build.gradle` (Module)**:
+   - Configurer les dépendances et les options de build.
+   - Exemple:
+     ```gradle
+     android {
+         compileSdk 33
+         
+         defaultConfig {
+             applicationId "com.nexusforge.app"
+             minSdk 33
+             targetSdk 33
+             versionCode 1
+             versionName "1.0"
+             
+             testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+         }
+         
+         buildTypes {
+             release {
+                 minifyEnabled false
+                 proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+             }
+         }
+         
+         compileOptions {
+             sourceCompatibility JavaVersion.VERSION_11
+             targetCompatibility JavaVersion.VERSION_11
+         }
+         
+         kotlinOptions {
+             jvmTarget = '11'
+         }
+         
+         buildFeatures {
+             compose true
+         }
+         
+         composeOptions {
+             kotlinCompilerExtensionVersion '1.5.3'
+         }
+     }
+     
+     dependencies {
+         implementation 'androidx.core:core-ktx:1.12.0'
+         implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+         implementation 'androidx.activity:activity-compose:1.8.0'
+         implementation "androidx.compose.ui:ui:$compose_ui_version"
+         implementation "androidx.compose.ui:ui-tooling-preview:$compose_ui_version"
+         implementation 'androidx.compose.material:material:1.5.4'
+         testImplementation 'junit:junit:4.13.2'
+         androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+         androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+         androidTestImplementation "androidx.compose.ui:ui-test-junit4:$compose_ui_version"
+         debugImplementation "androidx.compose.ui:ui-tooling:$compose_ui_version"
+         debugImplementation "androidx.compose.ui:ui-test-manifest:$compose_ui_version"
+     }
+     ```
+
+---
+
+## Structure du projet
+
+Voici la structure recommandée pour le projet:
+
+```
+App_Native/
+├── app/
+│   ├── src/
+│   │   ├── main/
+│   │   │   ├── kotlin/com/nexusforge/app/
+│   │   │   │   ├── ui/              # Composants UI Jetpack Compose
+│   │   │   │   ├── viewmodel/       # ViewModels
+│   │   │   │   ├── di/              # Injection de dépendances (Hilt)
+│   │   │   ├── rust/               # Code Rust (via JNI)
+│   │   │   │   ├── src/
+│   │   │   │   │   ├── lib.rs      # Logique métier Rust
+│   │   │   │   │   └── ...
+│   │   │   │   └── Cargo.toml
+│   │   │   ├── jniLibs/            # Bibliothèques natives compilées
+│   │   │   │   ├── arm64-v8a/
+│   │   │   │   ├── armeabi-v7a/
+│   │   │   │   └── x86_64/
+│   │   │   ├── res/                # Ressources
+│   │   │   │   ├── drawable/
+│   │   │   │   ├── values/
+│   │   │   ├── AndroidManifest.xml
+│   │   ├── test/
+│   │   ├── androidTest/
+│   ├── build.gradle
+├── build.gradle
+├── settings.gradle
+├── gradle.properties
 ```
 
-Puis déployer le contenu de `frontend/dist` sur l'hébergement web (ex: o2switch).
+---
 
-### Déploiement O2switch
+## Recommandations
 
-Le processus de déploiement et de backup de production est maintenu en scripts privés hors dépôt.
-Principes obligatoires:
+### Bonnes pratiques de développement
 
-- backup de `backend/data/state.json` avant chaque mise à jour,
-- stockage local des backups hors git,
-- préservation de `backend/data` et `backend/.env` pendant la synchro,
-- fallback SPA `.htaccess` conservé côté frontend.
+1. **Architecture propre**: Suivre les principes de l'architecture propre pour séparer les responsabilités.
+2. **Tests**: Écrire des tests unitaires et d'intégration pour chaque composant.
+3. **Revue de code**: Effectuer des revues de code régulières pour maintenir la qualité du code.
+4. **Documentation**: Documenter le code et les fonctionnalités pour faciliter la maintenance.
+5. **Performance**: Optimiser les performances de l'application, notamment pour les opérations réseau et la gestion des données.
 
-### Backend inclus dans ce repo
+### Sécurité
 
-Un backend Express est disponible dans `backend/` avec:
+1. **Stockage sécurisé**: Utiliser des mécanismes de stockage sécurisé pour les données sensibles.
+2. **Chiffrement**: Chiffrer les données sensibles avant de les stocker localement.
+3. **Authentification**: Implémenter des mécanismes d'authentification robustes.
+4. **Permissions**: Demander uniquement les permissions nécessaires et expliquer leur utilisation.
 
-- inscription + validation email,
-- approbation admin,
-- login JWT + refresh,
-- verrouillage progressif,
-- reset mot de passe,
-- 2FA TOTP.
+### UI/UX
 
-Lancement local:
+1. **Design cohérent**: Suivre les guidelines de design Material Design pour une expérience utilisateur cohérente.
+2. **Accessibilité**: Assurer que l'application est accessible à tous les utilisateurs.
+3. **Performance UI**: Optimiser les performances de l'interface utilisateur pour une expérience fluide.
 
-```bash
-cd backend
-npm install
-cp .env.example .env
-npm start
-```
+---
 
-Healthcheck:
+## Conclusion
 
-```bash
-curl http://127.0.0.1:4000/health
-```
+Ce document fournit une base pour le développement d'une application native Android pour NexusForge avec une architecture hybride Rust + Kotlin. En suivant les recommandations et les bonnes pratiques définies dans ARBITRAGE.md, vous pouvez créer une application robuste, sécurisée et performante qui offre une meilleure expérience utilisateur que le site web en mode responsif.
+
+**Prochaine étape**: Consulter ARBITRAGE.md pour les choix techniques détaillés.
