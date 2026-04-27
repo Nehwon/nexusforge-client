@@ -34,3 +34,6 @@ tmp/
 
 # Audit reports
 audit/
+
+# Workflow rules (local only)
+.windsurf/
